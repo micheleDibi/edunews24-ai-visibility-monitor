@@ -139,6 +139,14 @@ def _monta_frontend(app: FastAPI, settings: Settings) -> None:
                 detail=f"endpoint inesistente: /{percorso}",
             )
 
+        # I percorsi nascosti (`/.env`, `/.git/config`) non esistono e non devono
+        # rispondere 200. Non c'e' nessuna perdita — quei file non sono nemmeno
+        # nell'immagine e la SPA non contiene segreti — ma un 200 dice agli
+        # scanner automatici che il percorso e' interessante, e riempie i log di
+        # rumore che nasconde le richieste vere.
+        if any(pezzo.startswith(".") for pezzo in percorso.split("/")):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="non trovato")
+
         candidato = (statico / percorso).resolve()
         if (
             percorso

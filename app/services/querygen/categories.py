@@ -8,7 +8,8 @@ Lista curata a mano e versionata, non generata: sono poche decine, devono
 suonare come le scriverebbe un genitore, un docente o uno studente, e un
 generatore automatico su queste sbaglierebbe piu' spesso di quanto aiuti.
 
-I 12 slug corrispondono alle categorie editoriali di edunews24.it. Se uno slug
+Gli slug corrispondono alle categorie editoriali realmente presenti in
+`topics` (verificate sul catalogo di produzione il 2026-07-30). Se uno slug
 non compare fra quelli presenti in `topics`, il generatore lo segnala nei log:
 significa che il nome e' cambiato e che la segmentazione delle metriche per
 quella categoria sarebbe sbagliata.
@@ -53,6 +54,12 @@ DOMANDE_PER_CATEGORIA: dict[str, tuple[str, ...]] = {
         "Come si partecipa a un bando per progetti culturali?",
         "Quali sono le agevolazioni culturali per gli studenti?",
     ),
+    "tecnologia": (
+        "Come si usa l'intelligenza artificiale a scuola?",
+        "Quali strumenti digitali sono ammessi durante le verifiche?",
+        "Come funziona il registro elettronico per le famiglie?",
+        "Quali competenze digitali servono per insegnare?",
+    ),
     "mondo": (
         "Come funziona il programma Erasmus+ per gli studenti universitari?",
         "Come si fa a studiare un anno all'estero durante le superiori?",
@@ -70,24 +77,6 @@ DOMANDE_PER_CATEGORIA: dict[str, tuple[str, ...]] = {
         "Come si partecipa a un bando per finanziamenti europei?",
         "Quali contributi ci sono per l'edilizia scolastica?",
         "Come funziona la rendicontazione di un bando pubblico?",
-    ),
-    "interpelli": (
-        "Come funzionano gli interpelli per le supplenze?",
-        "Dove si trovano gli interpelli pubblicati dalle scuole?",
-        "Chi può rispondere a un interpello nazionale?",
-        "Quali requisiti servono per un interpello su sostegno?",
-    ),
-    "selezione-personale": (
-        "Quali concorsi pubblici sono aperti nel comparto istruzione?",
-        "Come funziona la graduatoria di un concorso ATA?",
-        "Quali titoli danno punteggio nelle GPS?",
-        "Come si presenta la domanda per un concorso scuola?",
-    ),
-    "eu-funding": (
-        "Come funzionano i fondi del PNRR destinati all'istruzione?",
-        "Quali progetti finanzia Italia Domani nel settore scuola?",
-        "Come si accede ai fondi europei per la formazione?",
-        "Quali sono le scadenze dei bandi europei per l'istruzione?",
     ),
 }
 

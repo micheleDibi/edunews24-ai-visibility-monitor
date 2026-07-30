@@ -30,6 +30,11 @@ log = structlog.get_logger(__name__)
 
 Riscrittore = Callable[[list[str]], Awaitable[list[str]]]
 
+# Le graffe letterali sono RADDOPPIATE perche' questa stringa passa da
+# `.format(n=...)`. Con graffe singole, `{"domande": [...]}` viene letto come un
+# campo da sostituire e solleva `KeyError: '"domande"'`: la riscrittura falliva
+# a ogni singolo lotto, in silenzio, ripiegando sempre sui template. Il ripiego
+# funzionava troppo bene per far notare che la funzione era morta.
 ISTRUZIONE = (
     "Riscrivi ciascuna di queste domande come le scriverebbe un genitore, un docente "
     "o uno studente italiano che cerca informazioni.\n"
@@ -37,7 +42,7 @@ ISTRUZIONE = (
     "nomi propri, sigle).\n"
     "Varia la forma: a volte una domanda completa, a volte una frase secca.\n"
     "Non aggiungere nomi di testate, siti o giornali.\n"
-    'Rispondi con un oggetto JSON {"domande": [...]} contenente esattamente '
+    'Rispondi con un oggetto JSON {{"domande": [...]}} contenente esattamente '
     "{n} stringhe, nello stesso ordine delle domande ricevute."
 )
 

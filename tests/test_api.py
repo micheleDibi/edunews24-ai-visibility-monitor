@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import httpx
 import pytest
@@ -399,3 +400,37 @@ class TestAzioni:
         assert risposta.status_code == 202
         assert risposta.json()["avviato"] is True
         assert "/api/runs" in risposta.json()["messaggio"]
+
+
+SPA_COSTRUITA = (Path(__file__).resolve().parents[1] / "app" / "static" / "index.html").exists()
+
+
+@pytest.mark.skipif(not SPA_COSTRUITA, reason="il build del frontend non c'e' (app/static vuota)")
+class TestCatchAllDellaSpa:
+    """Il catch-all serve la SPA su qualunque percorso: due eccezioni.
+
+    Sono entrambe regressioni. `/api/inesistente` restituiva HTML con stato 200,
+    e un refuso nel frontend si manifestava come errore di parsing JSON invece
+    che come 404 leggibile. `/.env` faceva lo stesso: nessuna perdita — quei
+    file non sono nell'immagine — ma uno stato 200 dice agli scanner
+    automatici che il percorso e' interessante, e i log si riempiono di rumore
+    che nasconde le richieste vere.
+    """
+
+    async def test_una_rotta_client_side_riceve_la_spa(self, client):
+        risposta = await client.get("/qualsiasi/rotta/della/spa")
+        assert risposta.status_code == 200
+        assert "text/html" in risposta.headers["content-type"]
+
+    @pytest.mark.parametrize("percorso", ["/api/inesistente", "/api/kpi/sbagliato"])
+    async def test_le_api_sconosciute_danno_404(self, client, percorso):
+        risposta = await client.get(percorso)
+        assert risposta.status_code == 404
+
+    @pytest.mark.parametrize(
+        "percorso",
+        ["/.env", "/.git/config", "/.aws/credentials", "/statico/.env", "/.well-known/x"],
+    )
+    async def test_i_percorsi_nascosti_danno_404(self, client, percorso):
+        risposta = await client.get(percorso)
+        assert risposta.status_code == 404

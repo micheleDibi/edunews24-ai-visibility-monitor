@@ -6,11 +6,14 @@ che si rilanciano ogni volta che si tocca un template.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app.models import Topic
+from app.services.querygen.categories import DOMANDE_PER_CATEGORIA, tutte_le_domande
 from app.services.querygen.normalize import calcola_hash, normalizza, solo_alfanumerico
-from app.services.querygen.rewrite import riscrivi_lotto
+from app.services.querygen.rewrite import ISTRUZIONE, riscrivi_lotto
 from app.services.querygen.selection import ripartisci
 from app.services.querygen.strategies import (
     TEMPLATE_KEYWORD_INTENT,
@@ -400,6 +403,48 @@ class TestGuardieRiscrittura:
             raise AssertionError("non deve essere chiamato")
 
         assert await riscrivi_lotto([], mai_chiamato) == []
+
+
+class TestIstruzioneDiRiscrittura:
+    """Il prompt passa da `.format()`: le graffe letterali devono restare tali.
+
+    Regressione da produzione. Con le graffe singole, `{"domande": [...]}` era
+    letto come campo da sostituire e `.format(n=...)` sollevava
+    `KeyError: '"domande"'` PRIMA della chiamata HTTP. L'eccezione veniva
+    catturata dal ripiego, che riportava i template: nessun errore visibile,
+    nessuna riga rossa, solo la funzione morta e un log a livello warning fra
+    migliaia. Il primo ciclo reale in produzione ha riscritto zero query su
+    undici senza che nulla lo dichiarasse.
+    """
+
+    def test_il_prompt_si_formatta_senza_esplodere(self):
+        reso = ISTRUZIONE.format(n=7)
+        assert "7 stringhe" in reso
+
+    def test_il_json_di_esempio_sopravvive_alla_formattazione(self):
+        # Se questo salta, il modello riceve un esempio di formato malformato e
+        # il `response_format` json_object non basta a salvarlo.
+        assert '{"domande": [...]}' in ISTRUZIONE.format(n=3)
+
+
+class TestDomandeDiCategoria:
+    """La lista curata a mano è l'unica parte del generatore senza rete di
+    sicurezza: nessun template la produce, nessun modello la rivede."""
+
+    def test_ogni_domanda_supera_la_validazione(self):
+        for slug, domanda in tutte_le_domande():
+            esito = valida_testo(domanda)
+            assert esito.valida, f"{slug}: {domanda} — {esito.motivo}"
+
+    def test_gli_slug_hanno_la_forma_di_uno_slug(self):
+        # Uno slug con una maiuscola o uno spazio non corrisponde a nulla in
+        # `topics` e la sua categoria sparisce dalla griglia senza un errore.
+        for slug in DOMANDE_PER_CATEGORIA:
+            assert re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug), slug
+
+    def test_nessuna_domanda_ripetuta(self):
+        domande = [d for _, d in tutte_le_domande()]
+        assert len(domande) == len(set(domande))
 
 
 class TestKeywordDaTitolo:
