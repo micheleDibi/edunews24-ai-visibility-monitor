@@ -1,0 +1,27 @@
+# Il build del frontend arriva dallo stadio node, non dall'host: copiarlo
+# dall'host renderebbe l'immagine dipendente da un `npm run build` locale.
+app/static/
+frontend/dist/
+frontend/node_modules/
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Non deve MAI finire nell'immagine: le credenziali arrivano da `env_file`.
+.env
+.env.local
+
+.git/
+.gitignore
+tests/
+docs/
+README.md
+*.md
+.DS_Store
+logs/
