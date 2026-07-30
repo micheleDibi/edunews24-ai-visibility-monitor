@@ -17,5 +17,5 @@ frontend/dist/
 app/static/
 
 .DS_Store
-logs/
+logs/*
 !logs/.gitkeep
