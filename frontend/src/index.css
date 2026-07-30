@@ -1,0 +1,185 @@
+@import "tailwindcss";
+
+/* ===========================================================================
+   Token — vedi docs/design.md
+   I sei colori hanno nomi propri italiani tratti dal mondo della scuola e dei
+   documenti, non da una tavolozza di dashboard. `sigillo` sta fuori tavolozza
+   perche' e' semantico e mai decorativo.
+   =========================================================================== */
+@theme {
+  --color-lavagna: #16211f;
+  --color-lavagna-80: #2b3a37;
+  --color-lavagna-60: #46534f;
+  --color-gesso: #f1f2ee;
+  --color-foglio: #ffffff;
+  --color-timbro: #5e3b96;
+  --color-timbro-tenue: #ece5f7;
+  --color-alloro: #3f6b4a;
+  --color-alloro-tenue: #e4eee6;
+  --color-ottone: #836320;
+  --color-ottone-tenue: #f3ecd9;
+  --color-grafite: #6e7673;
+  --color-grafite-tenue: #e3e6e2;
+  --color-sigillo: #a62a3c;
+  --color-sigillo-tenue: #f7e4e7;
+  --color-ardesia: #3a5670;
+
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Passo stretto in basso dove vivono i dati densi, ampio in alto. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-md: 1.125rem;
+  --text-lg: 1.375rem;
+  --text-xl: 1.875rem;
+  --text-2xl: 2.75rem;
+
+  --radius-card: 6px;
+  --radius-controllo: 4px;
+
+  --shadow-card: 0 1px 2px rgb(22 33 31 / 0.06), 0 1px 3px rgb(22 33 31 / 0.04);
+  --shadow-alzata: 0 4px 12px rgb(22 33 31 / 0.1);
+}
+
+/* Tema scuro progettato in parallelo, non come inversione: `lavagna` diventa il
+   fondo, gli accenti si SCHIARISCONO per tenere il contrasto sopra 4.5:1.
+   Restano sei colori, non un accento solo.
+
+   NOTA TECNICA: le sovrascritture vanno su `:root`, non dentro un secondo
+   blocco `@theme`. In Tailwind v4 `@theme` e' una direttiva di build che deve
+   stare al livello superiore: annidata in una media query viene ignorata in
+   silenzio, e il tema scuro semplicemente non esiste. Le utility generate
+   riferiscono `var(--color-*)`, quindi ridefinire le variabili qui capovolge il
+   tema a runtime. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-lavagna: #eef0ec;
+    --color-lavagna-80: #c3c9c5;
+    --color-lavagna-60: #99a29e;
+    --color-gesso: #121b1a;
+    --color-foglio: #1a2624;
+    --color-timbro: #b294e0;
+    --color-timbro-tenue: #2a2340;
+    --color-alloro: #7fba8d;
+    --color-alloro-tenue: #1e2f24;
+    --color-ottone: #d3b164;
+    --color-ottone-tenue: #2e2818;
+    --color-grafite: #9aa39f;
+    --color-grafite-tenue: #253230;
+    --color-sigillo: #e88798;
+    --color-sigillo-tenue: #3a1e24;
+    --color-ardesia: #8fa9c4;
+  }
+
+  /* L'ombra delle card e le sfumature dello scorrimento sono calibrate su un
+     fondo chiaro: su fondo scuro un'ombra nera non si vede. */
+  .scorrevole {
+    background-image:
+      linear-gradient(to right, var(--color-foglio) 30%, transparent),
+      linear-gradient(to left, var(--color-foglio) 30%, transparent),
+      linear-gradient(to right, rgb(0 0 0 / 0.4), transparent 12px),
+      linear-gradient(to left, rgb(0 0 0 / 0.4), transparent 12px);
+  }
+}
+
+/* ===========================================================================
+   Base
+   =========================================================================== */
+:root {
+  color-scheme: light dark;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-gesso);
+  color: var(--color-lavagna);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 16px sul corpo in mobile: sotto, iOS fa lo zoom automatico sui campi. */
+@media (max-width: 640px) {
+  body {
+    font-size: 1rem;
+  }
+}
+
+/* Focus da tastiera SEMPRE visibile. Mai `outline: none` senza sostituto. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-timbro);
+  outline-offset: 2px;
+  border-radius: var(--radius-controllo);
+}
+
+/* Le cifre in colonna devono incolonnarsi, altrimenti l'occhio non puo'
+   confrontarle verticalmente. */
+.cifre {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.display {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+/* Il citation rate: l'unico numero dell'interfaccia con questo corpo. */
+.cifra-madre {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: clamp(3rem, 10vw, 4.5rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+/* Tratteggio della banda quando il campione non basta per calcolare un tasso. */
+.banda-non-misurabile {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--color-grafite) 0 2px,
+    transparent 2px 5px
+  );
+  opacity: 0.55;
+}
+
+/* Ombra di bordo che segnala lo scorrimento orizzontale delle tabelle. */
+.scorrevole {
+  overflow-x: auto;
+  background:
+    linear-gradient(to right, var(--color-foglio) 30%, transparent),
+    linear-gradient(to left, var(--color-foglio) 30%, transparent),
+    linear-gradient(to right, rgb(22 33 31 / 0.12), transparent 12px),
+    linear-gradient(to left, rgb(22 33 31 / 0.12), transparent 12px);
+  background-attachment: local, local, scroll, scroll;
+  background-position: left, right, left, right;
+  background-repeat: no-repeat;
+  background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+}
+
+/* ===========================================================================
+   Movimento
+   Le transizioni sono un miglioramento, non il modo di trasmettere il dato:
+   con `prefers-reduced-motion` si azzerano e tutto resta leggibile.
+   =========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
