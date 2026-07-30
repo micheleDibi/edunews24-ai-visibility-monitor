@@ -19,9 +19,13 @@
  *  - `lettura` dice cosa farne — è la parte che serve davvero a una redazione;
  *  - `attenzione` è l'errore di lettura tipico, e va messo solo se esiste.
  *
- * Nessuna voce deve suggerire che questo servizio aumenti le citazioni:
- * interrogare un'API non modifica l'indice di retrieval del provider. Vedi la
- * voce `non_aumenta`, che lo dice esplicitamente all'utente.
+ * Nessuna voce deve suggerire che il VOLUME di interrogazioni aumenti le
+ * citazioni: interrogare un'API non modifica l'indice di retrieval del
+ * provider. Non è un disclaimer di prodotto ma una difesa del budget — chi
+ * credesse il contrario alzerebbe la frequenza dei cicli per niente. Lo scopo
+ * di questa dashboard resta far salire le citazioni, per la via che funziona:
+ * scoprire dove il giornale è invisibile e pubblicarci sopra. Vedi la voce
+ * `non_aumenta`, che dice all'utente quale leva funziona e quale no.
  */
 
 export interface VoceGlossario {
@@ -204,11 +208,13 @@ export const GLOSSARIO = {
   /* ------------------------------------------------ cosa questo strumento non fa */
 
   non_aumenta: {
-    termine: "Questo strumento non aumenta le citazioni",
+    termine: "Come si aumentano davvero le citazioni",
     misura:
-      "Interrogare l'API di un provider non modifica l'indice con cui quel provider sceglie le fonti.",
+      "Non sondando di più: interrogare l'API di un provider non modifica l'indice con cui quel provider sceglie le fonti. Il numero si muove per quello che il giornale pubblica, non per quante domande gli si mandano.",
     lettura:
-      "Il valore è il ciclo di ritorno in redazione: sapere su quali argomenti il giornale è invisibile, quali pezzi vengono ripresi e chi occupa il posto quando manca. Mandare più domande non sposta il numero, alza soltanto il costo.",
+      "La leva è la sezione «Dove sei invisibile»: gli argomenti su cui il giornale viene sondato e mai citato dicono dove manca un pezzo, e i «recuperato ma non citato» dicono quali pezzi il motore apre e scarta — di solito perché la risposta non è esplicita nei primi paragrafi. Riscrivere quelli, e coprire i buchi, è ciò che sposta il citation rate.",
+    attenzione:
+      "Raddoppiare i cicli orari o il numero di domande non alza il tasso: alza solo la spesa e stringe l'intervallo di confidenza. Se un argomento è a zero, la risposta è pubblicarci sopra, non sondarlo più spesso.",
   },
 } as const satisfies Record<string, VoceGlossario>;
 
@@ -237,7 +243,7 @@ export const GRUPPI_GLOSSARIO: Array<{ titolo: string; voci: ChiaveGlossario[] }
     voci: ["costo_stimato", "latenza", "ricerche"],
   },
   {
-    titolo: "Cosa questo strumento non fa",
+    titolo: "Come si passa dalla misura al risultato",
     voci: ["non_aumenta"],
   },
 ];

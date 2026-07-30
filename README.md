@@ -11,12 +11,24 @@ attiva, estrae le fonti citate e registra se `edunews24.it` compare. Il risultat
 **su quali argomenti il giornale è invisibile, e quali articoli vengono
 effettivamente citati.**
 
-## Cosa NON fa
+## Come si passa dalla misura al risultato
 
-**Non aumenta le citazioni.** Mandare query a un'API non modifica l'indice di
-retrieval del provider: il volume di traffico non ha alcun effetto sul
-posizionamento. È uno strumento di misura, non di ottimizzazione. Il valore è il
-ciclo di feedback editoriale — sapere dove si è invisibili — non il numero in sé.
+L'obiettivo è far salire le citazioni. Questo servizio ci arriva per la via
+editoriale, non per quella tecnica: **il volume di interrogazioni non sposta il
+numero.** Mandare query a un'API non modifica l'indice di retrieval del
+provider, e raddoppiare i cicli orari alza soltanto la spesa.
+
+Quello che sposta il numero sta in due sezioni della dashboard:
+
+* **Dove sei invisibile** — argomenti sondati molte volte e mai citati: sono i
+  pezzi che mancano.
+* **Recuperato ma non citato** — il motore apre la pagina e cita qualcun altro.
+  Non è un problema di indicizzazione ma di forma del pezzo: la risposta non è
+  esplicita dove il motore la cerca.
+
+La classifica dei domini dice contro chi si compete su ciascuna domanda.
+
+## Cosa NON fa
 
 Non fa scraping delle interfacce consumer, non usa proxy o user-agent
 falsificati, non aggira rate limit o captcha. Solo API ufficiali con chiavi

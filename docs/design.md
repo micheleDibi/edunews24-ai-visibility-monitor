@@ -218,10 +218,19 @@ In fondo alla pagina la stessa sorgente alimenta la **Guida alle metriche**:
 tutte le voci in sei gruppi, chiusa di default perche' e' l'unica sezione senza
 dati, raggiungibile dal pulsante in intestazione e dal piede pagina.
 
-L'ultimo gruppo si intitola **«Cosa questo strumento non fa»** e contiene una
-voce sola: interrogare un'API non modifica l'indice di retrieval del provider.
-E' un vincolo della specifica, e il posto giusto per dirlo e' dentro
-l'interfaccia, non solo nel README.
+L'ultimo gruppo si intitola **«Come si passa dalla misura al risultato»** e
+contiene una voce sola. Dice due cose insieme: che il volume di interrogazioni
+non sposta il citation rate — interrogare un'API non modifica l'indice di
+retrieval del provider — e quale leva invece lo sposta, cioe' le sezioni
+«Dove sei invisibile» e i «recuperato ma non citato».
+
+Il verso conta. La prima stesura intitolava il gruppo *«Cosa questo strumento
+non fa»* e il sottotitolo in intestazione diceva *«e' una misura: non aumenta le
+citazioni»*: un prodotto che si presenta negando il risultato che l'utente
+vuole. Il vincolo era giusto — chi credesse il contrario alzerebbe la frequenza
+dei cicli e brucerebbe budget per niente — ma va detto come indicazione
+operativa, non come premessa deludente. **Il fine della dashboard e' far salire
+le citazioni**; il chiarimento serve a non farlo tentare dalla parte sbagliata.
 
 ---
 

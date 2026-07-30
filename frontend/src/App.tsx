@@ -63,9 +63,15 @@ export default function App() {
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="min-w-0">
             <h1 className="display text-lg font-bold">Visibilità AI</h1>
+            {/* Il sottotitolo dice a cosa serve, non cosa non fa. La versione
+                precedente («è una misura: non aumenta le citazioni») negava un
+                meccanismo che nessuno aveva ancora ipotizzato, e leggeva come
+                se lo scopo del prodotto fosse deludere chi lo apre. Il vincolo
+                resta, ma il suo posto è la guida — voce «Come si aumentano
+                davvero le citazioni» — dove serve a non far sprecare budget. */}
             <p className="text-xs text-grafite">
-              Quanto i motori di risposta citano edunews24.it. È una misura: non aumenta le
-              citazioni.
+              Dove i motori di risposta citano edunews24.it e dove no, per sapere su cosa
+              intervenire.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">

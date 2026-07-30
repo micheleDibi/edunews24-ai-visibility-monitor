@@ -83,8 +83,9 @@ def crea_app() -> FastAPI:
     app = FastAPI(
         title="Edunews24 AI Visibility Monitor",
         description=(
-            "Misura se e quando i motori di risposta AI citano edunews24.it. "
-            "E' uno strumento di misura: non aumenta le citazioni."
+            "Misura dove i motori di risposta AI citano edunews24.it e dove no, "
+            "per indirizzare il lavoro editoriale. Le citazioni si guadagnano con "
+            "quello che si pubblica: il volume di interrogazioni non le sposta."
         ),
         version="0.1.0",
         lifespan=lifespan,
