@@ -36,6 +36,7 @@ export function StatoSistema() {
       id="sistema"
       titolo="Stato del sistema"
       descrizione="Cicli eseguiti, prossime esecuzioni e budget residuo."
+      spiega={["ciclo", "probe", "falliti", "costo_stimato", "non_aumenta"]}
       azioni={
         <Bottone
           variante="primario"

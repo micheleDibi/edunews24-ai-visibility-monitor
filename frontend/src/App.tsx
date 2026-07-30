@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut } from "lucide-react";
+import { BookOpen, LogOut } from "lucide-react";
 import { useState } from "react";
 
 import { Bottone, SelettorePeriodo } from "./components/base";
@@ -7,12 +7,23 @@ import { NonAutenticato, api } from "./lib/api";
 import { Categorie, Domini, Provider } from "./sezioni/confronti";
 import { CosaFunziona, DoveInvisibile } from "./sezioni/operativo";
 import { EsploraProbe } from "./sezioni/esplora";
+import { Legenda } from "./sezioni/legenda";
 import { HeaderKpi, Tendenza } from "./sezioni/panoramica";
 import { StatoSistema } from "./sezioni/sistema";
 
 export default function App() {
   const cache = useQueryClient();
   const [giorni, setGiorni] = useState(30);
+  const [guidaAperta, setGuidaAperta] = useState(false);
+
+  /** Apre la guida in fondo alla pagina e ci porta sopra, in un gesto solo. */
+  const vaiAllaGuida = () => {
+    setGuidaAperta(true);
+    const dolce = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document
+      .getElementById("legenda")
+      ?.scrollIntoView({ behavior: dolce ? "smooth" : "auto", block: "start" });
+  };
 
   const sessione = useQuery({
     queryKey: ["me"],
@@ -57,8 +68,12 @@ export default function App() {
               citazioni.
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <SelettorePeriodo giorni={giorni} onChange={setGiorni} />
+            <Bottone onClick={vaiAllaGuida}>
+              <BookOpen size={16} aria-hidden />
+              Guida alle metriche
+            </Bottone>
             <Bottone onClick={() => esci.mutate()} inCorso={esci.isPending}>
               <LogOut size={16} aria-hidden />
               Esci
@@ -83,12 +98,21 @@ export default function App() {
         <Categorie giorni={giorni} />
         <EsploraProbe giorni={giorni} />
         <StatoSistema />
+        <Legenda aperta={guidaAperta} onCambia={setGuidaAperta} />
 
         <footer className="pb-6 pt-2 text-xs text-grafite">
-          <p>
+          <p className="max-w-prose">
             Ogni percentuale porta il proprio denominatore e il proprio intervallo di confidenza
             al 95%. Dove il campione è troppo piccolo si mostra un tratto, non una cifra: un
-            numero calcolato su tre casi non è una misura.
+            numero calcolato su tre casi non è una misura.{" "}
+            <button
+              type="button"
+              onClick={vaiAllaGuida}
+              className="cursor-pointer text-timbro underline decoration-timbro/40 underline-offset-2 hover:decoration-timbro"
+            >
+              Guida alle metriche
+            </button>
+            .
           </p>
         </footer>
       </main>

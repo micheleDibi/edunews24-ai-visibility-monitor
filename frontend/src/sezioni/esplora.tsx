@@ -57,6 +57,18 @@ export function EsploraProbe({ giorni }: { giorni: number }) {
       id="esplora"
       titolo="Esplora probe"
       descrizione="Ogni interrogazione registrata. Apri una riga per la risposta integrale e le fonti estratte."
+      spiega={[
+        "probe",
+        "strategia",
+        "nessuna_ricerca",
+        "falliti",
+        "memoria",
+        "recuperato",
+        "mention",
+        "target_hit",
+        "non_risolto",
+        "costo_stimato",
+      ]}
       azioni={
         attivi ? (
           <Bottone

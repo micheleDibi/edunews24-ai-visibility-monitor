@@ -3,24 +3,40 @@
 import { AlertTriangle, Info, Loader2 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import {
+  BottoneSpiegazione,
+  PannelloGlossario,
+  useSpiegazione,
+} from "./Spiegazione";
+import type { ChiaveGlossario } from "../lib/glossario";
+
 export function Card({
   titolo,
   descrizione,
   azioni,
+  spiega,
   children,
   id,
 }: {
   titolo: string;
   descrizione?: string;
   azioni?: ReactNode;
+  /**
+   * Voci di glossario delle metriche mostrate in questa card. Il pulsante
+   * finisce nell'intestazione, il pannello in cima al corpo: aprendolo la
+   * spiegazione sta SOPRA i numeri che spiega, non davanti.
+   */
+  spiega?: readonly ChiaveGlossario[];
   children: ReactNode;
   id?: string;
 }) {
+  const { aperto, alterna, idPannello, bottone, chiudiConEsc } = useSpiegazione();
   return (
     <section
       id={id}
       className="rounded-[var(--radius-card)] border border-grafite-tenue bg-foglio shadow-card"
       aria-labelledby={id ? `${id}-titolo` : undefined}
+      onKeyDown={spiega ? chiudiConEsc : undefined}
     >
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-grafite-tenue px-4 py-3">
         <div className="min-w-0">
@@ -31,9 +47,26 @@ export function Card({
             <p className="mt-0.5 max-w-prose text-sm text-grafite">{descrizione}</p>
           )}
         </div>
-        {azioni && <div className="flex shrink-0 items-center gap-2">{azioni}</div>}
+        {(azioni || spiega) && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {spiega && (
+              <BottoneSpiegazione
+                aperto={aperto}
+                onToggle={alterna}
+                controlla={idPannello}
+                riferimento={bottone}
+              />
+            )}
+            {azioni}
+          </div>
+        )}
       </header>
-      <div className="p-4">{children}</div>
+      <div className="p-4">
+        {spiega && aperto && (
+          <PannelloGlossario id={idPannello} voci={spiega} className="mb-4" />
+        )}
+        {children}
+      </div>
     </section>
   );
 }

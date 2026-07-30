@@ -21,6 +21,16 @@ export function Provider({ giorni }: { giorni: number }) {
       id="provider"
       titolo="Provider"
       descrizione="Dove il giornale viene citato e dove no. La colonna «memoria» è separata perché misura una cosa diversa."
+      spiega={[
+        "citation_rate",
+        "mention",
+        "target_hit",
+        "memoria",
+        "falliti",
+        "latenza",
+        "ricerche",
+        "banda",
+      ]}
     >
       {error ? (
         <StatoErrore errore={error} riprova={() => void refetch()} />
@@ -156,6 +166,7 @@ export function Categorie({ giorni }: { giorni: number }) {
       id="categorie"
       titolo="Categorie"
       descrizione="Dove si legge il pattern. Ogni cella porta il numero e la sua incertezza: un gradiente di colore comunicherebbe una certezza che con questi denominatori non c'è."
+      spiega={["citation_rate", "soglia", "banda", "strategia"]}
     >
       {error ? (
         <StatoErrore errore={error} riprova={() => void refetch()} />
@@ -247,6 +258,7 @@ export function Domini({ giorni }: { giorni: number }) {
       id="domini"
       titolo="Chi occupa il posto"
       descrizione="I domini citati dai motori sulle stesse domande. È il dato che dice contro chi si compete."
+      spiega={["quota_dominio", "non_risolto"]}
     >
       {error ? (
         <StatoErrore errore={error} riprova={() => void refetch()} />

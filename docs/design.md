@@ -176,6 +176,55 @@ questo.
 
 ---
 
+## 5b. La nota a margine: le metriche spiegate dentro l'interfaccia
+
+La banda d'incertezza mostra *quanto* un numero e' incerto. Non dice *cosa*
+conta. E nessuna di queste metriche e' autoevidente: «citation rate 4,2%» non
+dichiara chi sta nel denominatore, non dice che i probe falliti ne sono esclusi,
+non dice che *mention* e *citazione* sono due cose diverse che non si sommano.
+Un numero letto male e' peggio di un numero assente, perche' produce comunque
+una decisione editoriale.
+
+Ogni sezione porta quindi un pulsante **«Come si legge»** che apre una nota a
+margine — filetto verticale `timbro` a sinistra, fondo `gesso` — con le voci di
+glossario delle metriche *di quella sezione*.
+
+```
+│ Citation rate
+│ La quota di risposte in cui edunews24.it compare fra le fonti citate.
+│ Sopra: i probe in cui il dominio e' fra le fonti citate. Sotto: i probe
+│ riusciti con la ricerca web attiva.                        ← `conto`
+│ E' il numero principale. Per un giornale che compete con…  ← `lettura`
+│ ⚠ Non e' una posizione in classifica…                      ← `attenzione`
+```
+
+Quattro decisioni, e il motivo di ciascuna:
+
+1. **Pulsante, non tooltip al passaggio del mouse.** Su un telefono il
+   passaggio del mouse non esiste. Chi apre la dashboard dal telefono ha lo
+   stesso diritto alla definizione di chi la apre dal desktop.
+2. **Si apre nel flusso, sopra il contenuto**, e spinge il resto in basso. Un
+   popover sovrapposto coprirebbe proprio i numeri che sta spiegando.
+3. **Il testo sta in `lib/glossario.ts`, non nei componenti.** Il citation rate
+   compare in cinque sezioni: cinque definizioni scritte a mano prima o poi si
+   contraddicono.
+4. **Il campo `attenzione` esiste come campo.** Per meta' di queste metriche
+   l'errore di lettura tipico e' prevedibile e ha un costo (sommare mention e
+   citazioni, leggere la memoria come se fosse retrieval, credere che una
+   variazione dentro l'incertezza sia un miglioramento). Averlo come campo
+   separato, in `ottone`, impedisce che finisca annegato in un paragrafo.
+
+In fondo alla pagina la stessa sorgente alimenta la **Guida alle metriche**:
+tutte le voci in sei gruppi, chiusa di default perche' e' l'unica sezione senza
+dati, raggiungibile dal pulsante in intestazione e dal piede pagina.
+
+L'ultimo gruppo si intitola **«Cosa questo strumento non fa»** e contiene una
+voce sola: interrogare un'API non modifica l'indice di retrieval del provider.
+E' un vincolo della specifica, e il posto giusto per dirlo e' dentro
+l'interfaccia, non solo nel README.
+
+---
+
 ## 6. Le otto sezioni
 
 | # | Sezione | Forma | Stato vuoto dice… |

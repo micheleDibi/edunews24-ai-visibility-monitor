@@ -154,6 +154,33 @@ body {
   opacity: 0.55;
 }
 
+/* Nota a margine: il pannello che spiega le metriche. Il filetto verticale a
+   sinistra è lo stesso segno con cui si annota un documento a margine — dice
+   «questo è un commento al testo», non «questo è un altro dato». Senza quel
+   segno il pannello sembrerebbe una card dentro una card. */
+.nota {
+  border-left: 3px solid var(--color-timbro);
+}
+
+/* Rivelazione del pannello: solo `opacity` e `transform`, mai `height`, che
+   costringerebbe il browser a ricalcolare il layout a ogni fotogramma. La
+   durata sta nella finestra 150–300 ms; sopra i 300 ms un pannello di aiuto
+   inizia a sembrare lento proprio a chi ha fretta di capire un numero. */
+@keyframes rivela {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rivela {
+  animation: rivela 160ms ease-out;
+}
+
 /* Ombra di bordo che segnala lo scorrimento orizzontale delle tabelle. */
 .scorrevole {
   overflow-x: auto;

@@ -31,6 +31,7 @@ export function DoveInvisibile({ giorni }: { giorni: number }) {
       id="lacune"
       titolo="Dove sei invisibile"
       descrizione="Articoli sondati più volte e mai citati, dal più sondato. Apri una riga per vedere le risposte ricevute e chi è stato citato al posto tuo."
+      spiega={["recuperato", "probe", "soglia", "strategia", "non_aumenta"]}
       azioni={
         <label className="flex items-center gap-2 text-sm">
           <span className="text-grafite">Almeno</span>
@@ -191,6 +192,7 @@ export function CosaFunziona({ giorni }: { giorni: number }) {
       id="successi"
       titolo="Cosa funziona"
       descrizione="Articoli citati, dal più citato. «Articolo giusto» significa che è stato citato proprio il pezzo che ha generato la domanda."
+      spiega={["target_hit", "citation_rate", "banda"]}
     >
       {error ? (
         <StatoErrore errore={error} riprova={() => void refetch()} />
