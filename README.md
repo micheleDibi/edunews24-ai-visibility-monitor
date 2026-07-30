@@ -40,10 +40,10 @@ $EDITOR .env          # SOURCE_DB_URL, MONITOR_DB_URL, le chiavi API
 
 # 3. L'hash della password di amministratore.
 docker compose build
-docker compose run --rm --no-deps app python -c \
-  "from argon2 import PasswordHasher; print(PasswordHasher().hash(input()))"
-#    → incollalo in ADMIN_PASSWORD_HASH FRA APICI SINGOLI: contiene `$`, e
-#      Compose lo distruggerebbe. Vale per ogni valore con `$` dentro.
+docker compose run --rm --no-deps app python sender.py hash-password
+#    → stampa la riga gia' pronta, apici compresi, da incollare nel .env.
+#      Funziona con il .env ancora incompleto: e' il comando che genera un
+#      valore che la configurazione poi pretende.
 
 # 4. Il segreto dei token.
 openssl rand -base64 48

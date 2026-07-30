@@ -71,3 +71,40 @@ class TestValidatori:
         s = _settings(gemini_api_key="chiave", gemini_enabled=False)
         assert "gemini" not in s.enabled_providers
         assert "gemini" in _settings(gemini_api_key="chiave", gemini_enabled=True).enabled_providers
+
+
+class TestHashPassword:
+    """`hash-password` deve funzionare PRIMA che esista una configurazione.
+
+    E' il comando che genera `ADMIN_PASSWORD_HASH`, che in produzione la
+    configurazione pretende: se lo caricasse, il primo comando della procedura
+    di installazione fallirebbe chiedendo il valore che sta per produrre.
+    """
+
+    def test_non_carica_le_settings(self, monkeypatch, capsys):
+        import app.cli as cli
+
+        def esplodi():
+            raise AssertionError("hash-password non deve leggere la configurazione")
+
+        monkeypatch.setattr(cli, "get_settings", esplodi)
+        monkeypatch.setattr("sys.stdin", __import__("io").StringIO("una-password-lunga\n"))
+
+        assert cli.main(["hash-password"]) == 0
+        assert "ADMIN_PASSWORD_HASH='$argon2" in capsys.readouterr().out
+
+    def test_la_riga_stampata_ha_gli_apici(self, monkeypatch, capsys):
+        import app.cli as cli
+
+        monkeypatch.setattr("sys.stdin", __import__("io").StringIO("una-password-lunga\n"))
+        cli.main(["hash-password"])
+        riga = next(
+            r for r in capsys.readouterr().out.splitlines() if r.startswith("ADMIN_PASSWORD_HASH=")
+        )
+        assert riga.endswith("'"), "senza apici Compose distrugge l'hash"
+
+    def test_password_troppo_corta(self, monkeypatch):
+        import app.cli as cli
+
+        monkeypatch.setattr("sys.stdin", __import__("io").StringIO("corta\n"))
+        assert cli.main(["hash-password"]) == 2

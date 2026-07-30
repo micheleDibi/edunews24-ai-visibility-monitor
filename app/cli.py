@@ -55,6 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_cost = sub.add_parser("cost-report", help="stampa la spesa stimata")
     p_cost.add_argument("--days", type=int, default=30)
 
+    sub.add_parser(
+        "hash-password",
+        help="genera l'hash per ADMIN_PASSWORD_HASH (non richiede configurazione)",
+    )
+
     return parser
 
 
@@ -342,8 +347,48 @@ COMANDI: dict[str, Callable[[argparse.Namespace, Settings], Awaitable[int]]] = {
 }
 
 
+def cmd_hash_password() -> int:
+    """Genera l'hash della password di amministratore.
+
+    NON tocca le Settings e non apre nessuna connessione, di proposito: e' il
+    comando che produce un valore che le Settings poi PRETENDONO in produzione.
+    Se caricasse la configurazione, il primo comando della procedura di
+    installazione fallirebbe perche' manca il valore che sta per generare.
+    """
+    import getpass
+
+    from argon2 import PasswordHasher
+
+    if sys.stdin.isatty():
+        password = getpass.getpass("Password di amministratore: ")
+        conferma = getpass.getpass("Ripetila: ")
+        if password != conferma:
+            print("\nLe due password non coincidono.\n", file=sys.stderr)
+            return 2
+    else:
+        # Con una pipe: `echo 'segreto' | ... sender.py hash-password`
+        password = sys.stdin.readline().rstrip("\n")
+
+    if len(password) < 8:
+        print("\nUsa almeno 8 caratteri.\n", file=sys.stderr)
+        return 2
+
+    hash_generato = PasswordHasher().hash(password)
+    print(
+        "\nIncolla questa riga nel .env, APICI SINGOLI COMPRESI.\n"
+        "Senza gli apici Docker Compose interpreta i `$` come variabili e "
+        "distrugge l'hash:\n"
+    )
+    print(f"ADMIN_PASSWORD_HASH='{hash_generato}'\n")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # Prima di qualunque lettura della configurazione: vedi il docstring sopra.
+    if args.comando == "hash-password":
+        return cmd_hash_password()
 
     try:
         settings = get_settings()

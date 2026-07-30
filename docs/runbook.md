@@ -47,9 +47,13 @@ openssl rand -base64 48
 
 # ADMIN_PASSWORD_HASH — l'immagine va costruita prima
 docker compose build
-docker compose run --rm --no-deps app python -c \
-  "from argon2 import PasswordHasher; print(PasswordHasher().hash(input()))"
+docker compose run --rm --no-deps app python sender.py hash-password
 ```
+
+`hash-password` e' l'unico comando che NON carica la configurazione e NON
+applica le migrazioni, ed e' voluto: in produzione la configurazione pretende
+`ADMIN_PASSWORD_HASH`, cioe' esattamente il valore che questo comando genera.
+Stampa la riga gia' pronta con gli apici, da incollare nel `.env`.
 
 **L'hash contiene `$` e va fra apici singoli nel `.env`.** Compose interpola i
 `$` nei valori di `env_file`: senza gli apici l'hash viene ridotto a spazzatura,

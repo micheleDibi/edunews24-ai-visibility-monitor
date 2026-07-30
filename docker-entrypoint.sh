@@ -11,6 +11,17 @@
 # raddoppiando la spesa.
 set -e
 
+# `hash-password` e' l'eccezione, e la ragione e' circolare: applicare le
+# migrazioni carica la configurazione, che in produzione PRETENDE
+# ADMIN_PASSWORD_HASH — cioe' esattamente il valore che quel comando serve a
+# generare. Senza questa riga il primo comando della procedura di installazione
+# non puo' funzionare.
+case "$*" in
+  *hash-password*)
+    exec "$@"
+    ;;
+esac
+
 if [ "${SKIP_MIGRATIONS:-false}" = "true" ]; then
   echo "migrazioni saltate (SKIP_MIGRATIONS=true)"
 else
