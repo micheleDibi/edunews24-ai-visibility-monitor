@@ -169,14 +169,24 @@ async def cmd_run_once(args: argparse.Namespace, settings: Settings) -> int:
 
     quante = args.limit if args.limit is not None else 5
 
-    # Il nome del provider si valida PRIMA di annunciare cosa si sta per fare:
-    # annunciare "sto per interrogare mistral" e poi fallire e' peggio che
+    # I provider si validano PRIMA di annunciare cosa si sta per fare:
+    # annunciare "sto per eseguire su 0 provider" e poi fallire e' peggio che
     # fallire subito.
+    if not settings.enabled_providers:
+        print(
+            "\nERRORE\n\nNessun provider configurato: metti almeno una chiave API nel .env "
+            "(OPENAI_API_KEY, PERPLEXITY_API_KEY, ANTHROPIC_API_KEY).\n"
+            "Le chiavi assenti non sono un errore: quel provider viene semplicemente "
+            "saltato. Ma almeno una serve.\n",
+            file=sys.stderr,
+        )
+        return 2
+
     if args.provider and args.provider not in settings.enabled_providers:
         print(
             f"\nERRORE\n\nProvider '{args.provider}' non disponibile: chiave assente, "
             "oppure disattivato.\nProvider configurati: "
-            f"{', '.join(settings.enabled_providers) or 'nessuno'}\n",
+            f"{', '.join(settings.enabled_providers)}\n",
             file=sys.stderr,
         )
         return 2

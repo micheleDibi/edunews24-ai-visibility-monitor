@@ -95,6 +95,12 @@ async def engine():
     async with motore.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.execute(text("DROP TABLE IF EXISTS articles CASCADE"))
+        # Anche `alembic_version`: senza, dopo i test Alembic crede che le
+        # migrazioni siano applicate mentre le tabelle non ci sono piu', e
+        # `alembic upgrade head` non fa nulla lasciando il database vuoto e
+        # apparentemente aggiornato. Sul database di sviluppo e' un'ora persa a
+        # capire perche' una query dice `relation "probes" does not exist`.
+        await conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
     await motore.dispose()
 
 
