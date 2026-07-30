@@ -4,30 +4,146 @@ Cosa fare quando. Organizzato per situazione, non per componente.
 
 ---
 
-## Avviare il servizio la prima volta
+## Avviare il servizio in produzione
 
-1. **Il ruolo di sola lettura.** Esegui `sql/readonly_role.sql` nella SQL Editor
-   del progetto Supabase che contiene `articles`. Leggi i commenti: il punto 5
-   riguarda RLS, e se `articles` ha row level security attiva un ruolo nuovo
-   **non vede nulla** finché non esiste una policy che lo nomina. Il punto 6 è la
-   verifica: `can_select` deve essere `true`, tutto il resto `false`.
+Serve una macchina con Docker e Docker Compose v2. Nient'altro: né Python né
+Node, sono dentro l'immagine.
 
-2. **La connection string.** Prendila da *Project Settings → Database*. Usa il
-   **pooler Supavisor in session mode** (porta 5432 sull'host
-   `...pooler.supabase.com`), non il collegamento diretto: `db.<ref>.supabase.co`
-   è IPv6-only sui progetti recenti e da un VPS senza IPv6 non si connette.
-   Nota il suffisso del project ref nello username: `edunews_monitor_ro.<REF>`.
+### 1. Prima di toccare il server: i due database
 
-3. **`.env`** da `.env.example`. Servono almeno `SOURCE_DB_URL`,
-   `MONITOR_DB_URL`, `JWT_SECRET`, `ADMIN_PASSWORD_HASH` e una chiave API.
+**Il ruolo di sola lettura** sul progetto Supabase che contiene `articles`.
+Esegui `sql/readonly_role.sql` nella SQL Editor. Leggi i commenti:
 
-4. **Su, e primo popolamento.**
-   ```bash
-   docker compose up -d --build
-   docker compose run --rm app python sender.py sync-topics
-   ```
+* il **punto 5** riguarda RLS. Se `articles` ha row level security attiva, un
+  ruolo nuovo **non vede nulla** finché non esiste una policy che lo nomina —
+  nemmeno le righe pubbliche, perché le policy scritte per `anon` non si
+  applicano a un ruolo diverso. Verificalo con
+  `SELECT relrowsecurity FROM pg_class WHERE oid = 'public.articles'::regclass;`
+* il **punto 6** è la verifica: `can_select` deve essere `true`, **tutto il
+  resto `false`**. Se qualcosa è `true` l'applicazione si rifiuterà di partire.
 
-5. **Reverse proxy con TLS.** Non opzionale: vedi *«Il login non funziona»*.
+**Il secondo progetto Supabase** per il database di monitoraggio. Crealo vuoto:
+le tabelle le fa Alembic all'avvio.
+
+Per entrambi prendi la connection string da *Project Settings → Database* e usa
+il **pooler Supavisor in session mode** (porta 5432 sull'host
+`...pooler.supabase.com`), non il collegamento diretto: `db.<ref>.supabase.co` è
+IPv6-only sui progetti recenti e da un VPS senza IPv6 non si connette. Nota il
+suffisso del project ref nello username: `edunews_monitor_ro.<REF>`.
+
+### 2. Sul server
+
+```bash
+git clone https://github.com/micheleDibi/edunews24-ai-visibility-monitor.git
+cd edunews24-ai-visibility-monitor
+cp .env.example .env
+```
+
+### 3. I segreti
+
+```bash
+# JWT_SECRET (base64: non contiene `$`, quindi non serve quotarlo)
+openssl rand -base64 48
+
+# ADMIN_PASSWORD_HASH — l'immagine va costruita prima
+docker compose build
+docker compose run --rm --no-deps app python -c \
+  "from argon2 import PasswordHasher; print(PasswordHasher().hash(input()))"
+```
+
+**L'hash contiene `$` e va fra apici singoli nel `.env`.** Compose interpola i
+`$` nei valori di `env_file`: senza gli apici l'hash viene ridotto a spazzatura,
+il login risponde 401 con la password giusta e non c'è niente nei log che
+spieghi perché. La stessa regola vale per qualunque password o connection string
+che contenga `$`.
+
+```ini
+ADMIN_PASSWORD_HASH='$argon2id$v=19$m=65536,t=3,p=4$...'
+```
+
+### 4. La porta
+
+```ini
+APP_PORT=8000        # la porta SULLA MACCHINA. Cambia solo questa.
+BIND_ADDRESS=127.0.0.1
+```
+
+`APP_PORT` è l'unica che ti interessa. `PORT` è la porta interna al container e
+non c'è motivo di toccarla.
+
+**Lascia `BIND_ADDRESS=127.0.0.1`.** Non è prudenza generica: il cookie di
+sessione è `Secure` e il browser non lo invia su HTTP, quindi esponendo la porta
+direttamente otterresti un login che risponde 200 e poi 401 a ogni richiesta.
+
+### 5. Su
+
+```bash
+docker compose up -d
+docker compose logs -f app          # Ctrl-C quando vedi "scheduler avviato"
+curl -s localhost:8000/api/health | python3 -m json.tool
+docker compose run --rm app python sender.py sync-topics
+```
+
+Se l'avvio si interrompe, il messaggio dice cosa fare: vedi *«L'applicazione non
+parte»* più sotto.
+
+### 6. Il reverse proxy con TLS
+
+Obbligatorio, per la ragione al punto 4. Con Caddy sono due righe in
+`/etc/caddy/Caddyfile`:
+
+```
+visibilita.edunews24.it {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+Caddy prende il certificato da sé. Con nginx serve `certbot` e:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+`X-Forwarded-For` non è decorativo: senza, il freno sul login conta tutti i
+tentativi come provenienti dal proxy e basta un attacco per bloccare anche te.
+
+Il firewall deve lasciare aperte solo 80 e 443. `APP_PORT` è su localhost e non
+va esposta.
+
+### 7. La prima verifica reale
+
+```bash
+# Le domande generate sono plausibili? Non spende nulla.
+docker compose run --rm app python sender.py generate-queries --count 20
+
+# Il primo ciclo vero. QUESTO spende: 5 query per il numero di provider.
+docker compose run --rm app python sender.py run-once --limit 5
+
+# Cosa hanno risposto davvero
+docker compose run --rm app python sender.py cost-report --days 1
+```
+
+Poi apri la dashboard e guarda *Esplora probe*: apri una riga e confronta le
+citazioni estratte con `raw_response`. È il momento in cui si scopre se il
+parser di un provider ha bisogno di una correzione — vedi *«Un provider ha
+cambiato API»*.
+
+Da qui in avanti il ciclo orario gira da sé al minuto 7.
+
+### 8. Aggiornare
+
+```bash
+git pull && docker compose up -d --build
+```
+
+Le migrazioni girano da sé all'avvio. Il container si ferma e riparte: un ciclo
+in corso viene interrotto e chiuso come `failed` al riavvio successivo, senza
+perdere i probe già scritti.
 
 ---
 

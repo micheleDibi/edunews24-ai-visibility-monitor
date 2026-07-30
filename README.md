@@ -39,23 +39,30 @@ cp .env.example .env
 $EDITOR .env          # SOURCE_DB_URL, MONITOR_DB_URL, le chiavi API
 
 # 3. L'hash della password di amministratore.
-python -c "from argon2 import PasswordHasher; print(PasswordHasher().hash(input()))"
-#    → incollalo in ADMIN_PASSWORD_HASH
+docker compose build
+docker compose run --rm --no-deps app python -c \
+  "from argon2 import PasswordHasher; print(PasswordHasher().hash(input()))"
+#    → incollalo in ADMIN_PASSWORD_HASH FRA APICI SINGOLI: contiene `$`, e
+#      Compose lo distruggerebbe. Vale per ogni valore con `$` dentro.
 
 # 4. Il segreto dei token.
 openssl rand -base64 48
 #    → incollalo in JWT_SECRET
 
 # 5. Su.
-docker compose up -d --build
+docker compose up -d
 
 # 6. Il primo popolamento del catalogo.
 docker compose run --rm app python sender.py sync-topics
 ```
 
-La dashboard è su `http://127.0.0.1:8000`. **Mettila dietro un reverse proxy con
-TLS**: il cookie di sessione è `Secure` e il browser non lo invia su HTTP, quindi
-in HTTP puro il login non funziona senza dire perché.
+La porta si imposta con **`APP_PORT`** nel `.env` (default 8000); `BIND_ADDRESS`
+resta `127.0.0.1`.
+
+**Mettila dietro un reverse proxy con TLS**: il cookie di sessione è `Secure` e
+il browser non lo invia su HTTP, quindi in HTTP puro il login risponde 200 e poi
+401 a ogni richiesta, senza dire perché. La procedura completa, con la
+configurazione di Caddy e nginx, è in `docs/runbook.md`.
 
 ---
 
