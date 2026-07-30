@@ -1,0 +1,86 @@
+# Edunews24 AI Visibility Monitor — un solo servizio.
+#
+#   docker compose up -d --build
+#   docker compose logs -f app
+#   docker compose run --rm app python sender.py sync-topics
+#
+# Le credenziali stanno in `.env` (vedi `.env.example`), che NON finisce
+# nell'immagine: viene letto a runtime da `env_file`.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: edunews24-monitor:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Il fuso decide cosa significa "oggi" per il budget e per gli aggregati
+      # giornalieri. Per un giornale italiano deve essere Roma, non UTC.
+      TZ: ${TZ:-Europe/Rome}
+    ports:
+      # Solo su localhost: davanti ci va un reverse proxy che termina TLS.
+      # Il cookie di sessione e' `Secure` e il browser non lo invia su HTTP,
+      # quindi esporre questa porta direttamente su internet significherebbe
+      # un login che non funziona.
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8000}:8000"
+    volumes:
+      # I log vanno su stdout e li raccoglie Docker; questo volume serve solo se
+      # si vuole conservarli su disco.
+      - ./logs:/app/logs
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=4).status==200 else 1)
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    # Un container che si riavvia in loop per un errore di configurazione non
+    # deve riempire il disco di log.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ---------------------------------------------------------------------------
+# Postgres locale — OPZIONALE, e da usare SOLO se non si vuole un secondo
+# progetto Supabase per il database di monitoraggio.
+#
+# Se lo abiliti:
+#   1. togli il commento a tutto il blocco qui sotto e alle righe `depends_on`
+#      e `networks` del servizio `app`;
+#   2. in `.env` metti
+#      MONITOR_DB_URL=postgresql+asyncpg://monitor:LA_TUA_PASSWORD@postgres:5432/monitor
+#   3. con un Postgres senza pooler puoi mettere
+#      DB_DISABLE_PREPARED_STATEMENTS=false (piccolo guadagno, non necessario).
+#
+# Il database SORGENTE resta comunque su Supabase: qui non ci finisce mai.
+# ---------------------------------------------------------------------------
+#
+#   postgres:
+#     image: postgres:17-alpine
+#     restart: unless-stopped
+#     environment:
+#       POSTGRES_DB: monitor
+#       POSTGRES_USER: monitor
+#       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?serve POSTGRES_PASSWORD in .env}
+#     volumes:
+#       - dati-postgres:/var/lib/postgresql/data
+#     healthcheck:
+#       test: ["CMD-SHELL", "pg_isready -U monitor -d monitor"]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 5
+#
+# volumes:
+#   dati-postgres:
+#
+# E nel servizio `app`:
+#     depends_on:
+#       postgres:
+#         condition: service_healthy
