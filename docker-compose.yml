@@ -20,21 +20,27 @@ services:
       # giornalieri. Per un giornale italiano deve essere Roma, non UTC.
       TZ: ${TZ:-Europe/Rome}
     ports:
-      # Solo su localhost: davanti ci va un reverse proxy che termina TLS.
-      # Il cookie di sessione e' `Secure` e il browser non lo invia su HTTP,
-      # quindi esporre questa porta direttamente su internet significherebbe
-      # un login che non funziona.
-      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8000}:8000"
+      # APP_PORT e BIND_ADDRESS si impostano nel .env. Per default solo su
+      # localhost: davanti ci va un reverse proxy che termina TLS. Il cookie di
+      # sessione e' `Secure` e il browser non lo invia su HTTP, quindi esporre
+      # questa porta direttamente su internet significherebbe un login che
+      # risponde 200 e poi 401 a ogni richiesta.
+      #
+      # Il lato destro segue PORT: se qualcuno cambia la porta interna, la
+      # mappatura non punta piu' nel vuoto.
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8000}:${PORT:-8000}"
     volumes:
       # I log vanno su stdout e li raccoglie Docker; questo volume serve solo se
       # si vuole conservarli su disco.
       - ./logs:/app/logs
     healthcheck:
+      # La porta si legge da PORT: un valore fissato a mano renderebbe il
+      # container `unhealthy` per sempre se PORT cambiasse.
       test:
         - CMD
         - python
         - -c
-        - import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=4).status==200 else 1)
+        - import os,sys,urllib.request;p=os.environ.get('PORT','8000');sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{p}/api/health',timeout=4).status==200 else 1)
       interval: 30s
       timeout: 5s
       start_period: 20s

@@ -176,6 +176,27 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Validatori
     # ------------------------------------------------------------------
+    @field_validator(
+        "admin_password_hash", "jwt_secret", "source_db_url", "monitor_db_url", mode="before"
+    )
+    @classmethod
+    def _togli_apici(cls, v: object) -> object:
+        """Rimuove gli apici che circondano il valore.
+
+        Docker Compose interpola i `$` nei valori di `env_file`: un hash argon2
+        (`$argon2id$v=19$m=65536$...`) verrebbe letto come una sequenza di
+        variabili inesistenti e ridotto a spazzatura, con un login che non
+        funziona e nessun messaggio che spieghi perche'. La soluzione e'
+        racchiudere il valore fra apici singoli, che Compose rispetta e rimuove.
+
+        Ma `docker run --env-file` NON interpola e NON rimuove gli apici: lo
+        stesso file, usato in quel modo, consegnerebbe un valore con gli apici
+        attaccati. Toglierli qui rende il `.env` corretto in entrambi i casi.
+        """
+        if isinstance(v, str) and len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+            return v[1:-1]
+        return v
+
     @field_validator("source_db_url", "monitor_db_url")
     @classmethod
     def _must_be_asyncpg(cls, v: str) -> str:
