@@ -124,6 +124,16 @@ export const GLOSSARIO = {
       "Si dichiara invece di indovinarlo. È una quota di misura mancante: se è alta, la classifica dei domini è parziale in quella misura.",
   },
 
+  recuperabilita: {
+    termine: "Perché «Dove sei invisibile» è ordinata così",
+    misura:
+      "Non per numero di probe, ma per quanto costa rimediare. Prima gli articoli che il motore ha già aperto senza citarli, poi quelli che non ha mai aperto.",
+    lettura:
+      "In cima ci sono i recuperi sprecati: la pagina è stata letta e scartata, quindi il traffico di retrieval esiste già e manca solo l'ultimo passaggio — di solito la risposta non è esplicita dove il motore la cerca, ed è lavoro di riscrittura su un pezzo che c'è. Sotto ci sono gli argomenti mai raggiunti: lì manca il pezzo, o l'autorevolezza sull'argomento, e il lavoro è molto più lungo.",
+    attenzione:
+      "Non c'è un punteggio di opportunità che pesi recuperi e probe in un numero solo: con questi denominatori i pesi sarebbero inventati. L'ordine dentro ciascun gruppo è per conteggio grezzo, e fra due articoli vicini la differenza può essere caso.",
+  },
+
   /* --------------------------------------------- perché i numeri hanno una banda */
 
   banda: {
@@ -237,6 +247,10 @@ export const GRUPPI_GLOSSARIO: Array<{ titolo: string; voci: ChiaveGlossario[] }
   {
     titolo: "Come nascono le domande",
     voci: ["ciclo", "strategia", "quota_dominio"],
+  },
+  {
+    titolo: "Da dove cominciare",
+    voci: ["recuperabilita"],
   },
   {
     titolo: "Costi e prestazioni",

@@ -75,7 +75,9 @@ export interface Lacuna {
   category_slug: string | null;
   published_at: string | null;
   probe: number;
-  recuperato_mai: boolean;
+  /** Quante volte il motore ha aperto la pagina senza citarla. Qui sono tutti
+   *  articoli mai citati: sopra zero manca la forma del pezzo, a zero il pezzo. */
+  recuperi: number;
 }
 
 export interface Successo {

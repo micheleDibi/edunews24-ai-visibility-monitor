@@ -8,7 +8,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { BandaIncertezza } from "../components/BandaIncertezza";
 import { Card, Distintivo, Scheletro, StatoErrore, StatoVuoto } from "../components/base";
@@ -26,12 +26,19 @@ export function DoveInvisibile({ giorni }: { giorni: number }) {
     queryFn: () => api.lacune(giorni, minProbe),
   });
 
+  // Contati una volta sola: servono nelle due intestazioni di gruppo, e
+  // ricalcolarli dentro il `map` sarebbe un filtro completo per riga.
+  const conteggi = useMemo(() => {
+    const riscrivibili = (data ?? []).filter((l) => l.recuperi > 0).length;
+    return { riscrivibili, mancanti: (data?.length ?? 0) - riscrivibili };
+  }, [data]);
+
   return (
     <Card
       id="lacune"
       titolo="Dove sei invisibile"
-      descrizione="Articoli sondati più volte e mai citati, dal più sondato. Apri una riga per vedere le risposte ricevute e chi è stato citato al posto tuo."
-      spiega={["recuperato", "probe", "soglia", "strategia", "non_aumenta"]}
+      descrizione="Articoli sondati più volte e mai citati, ordinati per quanto costa rimediare: prima quelli che il motore ha già aperto e scartato. Apri una riga per le risposte ricevute e per chi è stato citato al posto tuo."
+      spiega={["recuperabilita", "recuperato", "probe", "soglia", "non_aumenta"]}
       azioni={
         <label className="flex items-center gap-2 text-sm">
           <span className="text-grafite">Almeno</span>
@@ -58,10 +65,26 @@ export function DoveInvisibile({ giorni }: { giorni: number }) {
         />
       ) : (
         <ul className="divide-y divide-grafite-tenue">
-          {data.map((l) => {
+          {data.map((l, i) => {
             const espanso = aperto === l.topic_id;
+            const recuperabile = l.recuperi > 0;
+            // L'API restituisce gia' ordinato: i recuperati sprecati prima. Qui
+            // si inserisce l'intestazione dove il gruppo cambia, cosi' la
+            // distinzione fra «riscrivi» e «scrivi» si vede senza doverla
+            // dedurre dai distintivi riga per riga.
+            // Le parentesi sono ridondanti per il parser e necessarie per chi
+            // legge: senza, `data[i-1].recuperi > 0 !== recuperabile` regge solo
+            // grazie alla precedenza di `>` su `!==`.
+            const primoDelGruppo = i === 0 || (data[i - 1]!.recuperi > 0) !== recuperabile;
             return (
               <li key={l.topic_id}>
+                {primoDelGruppo && (
+                  <IntestazioneGruppo
+                    recuperabile={recuperabile}
+                    quanti={recuperabile ? conteggi.riscrivibili : conteggi.mancanti}
+                    primo={i === 0}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => setAperto(espanso ? null : l.topic_id)}
@@ -78,14 +101,19 @@ export function DoveInvisibile({ giorni }: { giorni: number }) {
                     <span className="block font-medium">{l.title}</span>
                     <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-grafite">
                       {l.category_slug && <Distintivo>{l.category_slug}</Distintivo>}
-                      <span className="cifre">{intero(l.probe)} probe, zero citazioni</span>
-                      {l.recuperato_mai && (
+                      {l.recuperi > 0 ? (
                         <Distintivo
                           tinta="ottone"
-                          titolo="Il giornale è comparso fra le fonti mostrate al modello, che però non l'ha citato: è un problema di qualità percepita del pezzo, non di indicizzazione."
+                          titolo="Il motore ha aperto la pagina e ha citato qualcun altro: manca l'ultimo passaggio, non l'indicizzazione."
                         >
-                          recuperato ma non citato
+                          <span className="cifre">
+                            aperto {intero(l.recuperi)} volte su {intero(l.probe)}, mai citato
+                          </span>
                         </Distintivo>
+                      ) : (
+                        <span className="cifre">
+                          mai raggiunto in {intero(l.probe)} probe
+                        </span>
                       )}
                     </span>
                   </span>
@@ -97,6 +125,41 @@ export function DoveInvisibile({ giorni }: { giorni: number }) {
         </ul>
       )}
     </Card>
+  );
+}
+
+/**
+ * Lo spartiacque fra i due interventi possibili.
+ *
+ * Senza questa intestazione la lista e' un elenco di brutte notizie tutte
+ * uguali. Con, e' una coda di lavoro in due code: sopra c'e' quello che si
+ * sistema riscrivendo un pezzo che esiste gia', sotto quello per cui bisogna
+ * scriverne uno nuovo. Il costo dei due e' diverso di un ordine di grandezza,
+ * ed e' l'unica informazione che serve per decidere da dove partire lunedi'.
+ */
+function IntestazioneGruppo({
+  recuperabile,
+  quanti,
+  primo,
+}: {
+  recuperabile: boolean;
+  quanti: number;
+  primo: boolean;
+}) {
+  return (
+    <div className={primo ? "pb-1" : "pb-1 pt-5"}>
+      <h3 className="display flex flex-wrap items-baseline gap-2 text-base font-semibold">
+        {recuperabile ? "Basta riscrivere il pezzo" : "Manca il pezzo"}
+        <Distintivo tinta={recuperabile ? "ottone" : "grafite"}>
+          <span className="cifre">{intero(quanti)}</span>
+        </Distintivo>
+      </h3>
+      <p className="mt-0.5 max-w-prose text-sm text-lavagna-60">
+        {recuperabile
+          ? "Il motore apre già queste pagine e poi cita qualcun altro: il retrieval c'è, manca la risposta esplicita dove viene cercata. È il lavoro più corto e il primo da fare."
+          : "Su queste domande il motore non ha mai aperto il sito. Qui non basta riscrivere: manca il pezzo, o l'autorevolezza sull'argomento."}
+      </p>
+    </div>
   );
 }
 

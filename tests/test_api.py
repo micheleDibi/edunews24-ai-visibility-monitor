@@ -314,6 +314,75 @@ class TestSezioniOperative:
         # Il nostro topic e' citato: non deve comparire fra le lacune.
         assert (await autenticato.get("/api/gaps?days=7&min_probe=1")).json() == []
 
+    async def test_gaps_mette_prima_i_recuperi_sprecati(self, autenticato, client, session):
+        """L'ordine e' per costo di rimedio, non per volume di probe.
+
+        Un articolo che il motore apre e scarta si risolve riscrivendolo; uno
+        che non apre mai richiede di pubblicare. Ordinare per numero di probe
+        metterebbe in cima il secondo solo perche' e' stato sondato di piu', e
+        la sezione tornerebbe descrittiva invece che operativa.
+        """
+
+        async def lacuna(slug: str, *, probe: int, recuperati: int) -> None:
+            t = Topic(
+                source_id=abs(hash(slug)) % 100000,
+                slug=slug,
+                title=slug,
+                category_slug="scuola",
+                tags=[],
+                faq_questions=[],
+                probe_count=0,
+                published_at=ADESSO - timedelta(days=2),
+            )
+            session.add(t)
+            await session.flush()
+            q = Query(
+                text=f"domanda su {slug} lunga abbastanza da essere valida?",
+                text_hash=f"hash-{slug}",
+                strategy="keyword_intent",
+                generator="template",
+                category_slug="scuola",
+                topic_id=t.id,
+            )
+            session.add(q)
+            await session.flush()
+            for n in range(probe):
+                # Un run per probe: `UNIQUE (run_id, query_id, provider, mode)`
+                # e' il vincolo che impedisce il doppio conteggio se un ciclo
+                # viene ritentato, e vale anche qui.
+                r = Run(status="ok", kind="hourly")
+                session.add(r)
+                await session.flush()
+                session.add(
+                    Probe(
+                        run_id=r.id,
+                        query_id=q.id,
+                        provider="openai",
+                        model="gpt-5.6-luna",
+                        mode="retrieval",
+                        status="ok",
+                        created_at=ADESSO - timedelta(hours=1),
+                        cost_eur=Decimal("0.01"),
+                        latency_ms=1000,
+                        edunews_cited=False,
+                        edunews_retrieved=n < recuperati,
+                    )
+                )
+
+        # Il mai-raggiunto e' quello sondato DI PIU': con l'ordinamento vecchio
+        # sarebbe primo.
+        await lacuna("mai-raggiunto", probe=30, recuperati=0)
+        await lacuna("aperto-poco", probe=10, recuperati=2)
+        await lacuna("aperto-molto", probe=12, recuperati=7)
+        await session.commit()
+
+        await client.post("/api/auth/login", json={"password": PASSWORD_TEST})
+        lacune = (await client.get("/api/gaps?days=7&min_probe=5")).json()
+
+        assert [x["slug"] for x in lacune] == ["aperto-molto", "aperto-poco", "mai-raggiunto"]
+        assert [x["recuperi"] for x in lacune] == [7, 2, 0]
+        assert [x["probe"] for x in lacune] == [12, 10, 30]
+
     async def test_wins_elenca_gli_articoli_citati(self, autenticato, catalogo):
         vittorie = (await autenticato.get("/api/wins?days=7")).json()
         assert len(vittorie) == 1

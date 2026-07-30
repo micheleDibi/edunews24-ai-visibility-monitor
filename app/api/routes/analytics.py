@@ -367,10 +367,12 @@ class Lacuna(BaseModel):
     category_slug: str | None
     published_at: datetime | None
     probe: int = Field(description="Probe riusciti su questo articolo nel periodo")
-    recuperato_mai: bool = Field(
+    recuperi: int = Field(
         description=(
-            "Vero se il giornale e' comparso almeno una volta fra le fonti recuperate "
-            "senza essere citato: e' un problema diverso da non essere trovato affatto."
+            "Quante volte il motore ha aperto la pagina senza citarla. Qui dentro "
+            "sono tutti articoli mai citati, quindi ogni recupero e' un recupero "
+            "sprecato. E' il numero che separa i due interventi possibili: sopra "
+            "zero manca la forma del pezzo, a zero manca il pezzo."
         )
     )
 
@@ -383,11 +385,30 @@ async def gaps(
     min_probe: Annotated[int, QueryParam(ge=1, le=1000)] = SOGLIA_MINIMA,
     limit: Annotated[int, QueryParam(ge=1, le=500)] = 100,
 ) -> list[Lacuna]:
-    """Argomenti sondati e mai citati, dal piu' sondato.
+    """Argomenti sondati e mai citati, ordinati per quanto sono recuperabili.
 
     `min_probe` non e' arbitrario: un articolo sondato due volte e mai citato e'
     rumore, uno sondato venti volte e mai citato e' un dato. Il default e' la
     stessa soglia sotto la quale non si calcola nessun tasso.
+
+    L'ORDINE non e' per volume di probe, ed e' la scelta che rende questa
+    sezione operativa invece che descrittiva. Due articoli mai citati non
+    costano la stessa fatica:
+
+    * il motore ha aperto la pagina e ha citato qualcun altro → il traffico di
+      retrieval c'e' gia', manca l'ultimo passaggio; di solito la risposta non
+      e' esplicita dove il motore la cerca. Si risolve riscrivendo;
+    * il motore non l'ha mai aperta → manca il pezzo, o manca l'autorevolezza
+      sull'argomento. Si risolve pubblicando, e ci vuole molto di piu'.
+
+    Quindi: prima quelli con almeno un recupero, fra loro per numero di
+    recuperi, e solo dopo gli altri per volume.
+
+    Deliberatamente NON si calcola un punteggio di opportunita' che pesi
+    recuperi e probe in un numero solo. Con questi denominatori i pesi
+    sarebbero inventati, e un decimale finto e' peggio di un ordinamento
+    grossolano ma vero. Il primo criterio e' un fatto binario (recuperato: si o
+    no), il secondo un conteggio grezzo.
     """
     da = inizio_periodo(days)
     stmt = (
@@ -409,7 +430,17 @@ async def gaps(
         .group_by(Topic.id)
         .having(func.count().filter(Probe.edunews_cited) == 0)
         .having(func.count() >= min_probe)
-        .order_by(func.count().desc())
+        .order_by(
+            # In Postgres `true` viene prima di `false` in ordine discendente:
+            # il gruppo «basta riscrivere» apre l'elenco.
+            (func.count().filter(Probe.edunews_retrieved) > 0).desc(),
+            func.count().filter(Probe.edunews_retrieved).desc(),
+            func.count().desc(),
+            # A parita' di tutto, l'id: senza, l'ordine di due righe identiche
+            # cambia fra una richiesta e l'altra e la lista «balla» a ogni
+            # aggiornamento automatico.
+            Topic.id.asc(),
+        )
         .limit(limit)
     )
     return [
@@ -421,7 +452,7 @@ async def gaps(
             category_slug=r.category_slug,
             published_at=r.published_at,
             probe=r.probe,
-            recuperato_mai=r.recuperati > 0,
+            recuperi=r.recuperati,
         )
         for r in (await db.execute(stmt)).all()
     ]
