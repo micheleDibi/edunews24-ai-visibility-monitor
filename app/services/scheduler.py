@@ -46,14 +46,23 @@ ID_MANUTENZIONE = "manutenzione_notturna"
 # delle 08:07 sposta la misura senza aggiungere informazione.
 GRAZIA_MISFIRE_S = 600
 
+# Quanto un singolo ciclo puo' superare la quota nominale quando recupera ore
+# perdute. Senza tetto, un container spento dalle 00 alle 20 farebbe partire alle
+# 20:07 un lotto con l'intero budget del giorno: costo concentrato in un'ora e
+# campione tutto nella stessa fascia oraria, cioe' il contrario di una misura
+# distribuita.
+FATTORE_RECUPERO = 2
 
-async def query_usate_oggi(session: AsyncSession, settings: Settings) -> int:
+
+async def query_usate_oggi(
+    session: AsyncSession, settings: Settings, *, adesso: datetime | None = None
+) -> int:
     """Query DISTINTE gia' sondate oggi, nel fuso configurato.
 
     Il budget della specifica e' in query distinte, non in probe: la stessa
     domanda mandata a quattro provider conta uno.
     """
-    adesso = datetime.now(ZoneInfo(settings.tz))
+    adesso = adesso or datetime.now(ZoneInfo(settings.tz))
     inizio = adesso.replace(hour=0, minute=0, second=0, microsecond=0)
     return (
         await session.execute(
@@ -62,16 +71,39 @@ async def query_usate_oggi(session: AsyncSession, settings: Settings) -> int:
     ).scalar_one()
 
 
-async def quante_query_ora(session: AsyncSession, settings: Settings) -> int:
-    """Dimensione del lotto di questa ora, con il tetto giornaliero rispettato.
+async def quante_query_ora(
+    session: AsyncSession, settings: Settings, *, adesso: datetime | None = None
+) -> int:
+    """Dimensione del lotto di questa ora. Il budget si spalma sulle ore che
+    restano, non si consuma a ritmo fisso finche' finisce.
 
-    `ceil(200/24)` fa 9, che per 24 ore fa 216: piu' del budget dichiarato. Si
-    prende il minimo fra la quota oraria e cio' che resta davvero, cosi'
-    DAILY_QUERY_BUDGET e' un tetto e non un'approssimazione.
+    La versione precedente prendeva `ceil(budget/24)` e lo ripeteva identico
+    fino a esaurimento. Con 200 query al giorno sono 9 all'ora, ma 9 x 24 fa
+    216: il budget si esaurisce PRIMA della fine del giorno. Il risultato, in
+    produzione, era il ciclo delle 22:07 con 2 query invece di 9 e quello delle
+    23:07 saltato del tutto — una fascia oraria senza misure, ogni giorno, che
+    nei dati sembra assenza di attivita' dei motori e invece e' un difetto di
+    aritmetica.
+
+    Dividere per le ore che mancano rende la copertura h24 una proprieta' della
+    formula e non una speranza: a ogni ora si ridistribuisce cio' che resta, e
+    l'ultima ora del giorno riceve sempre qualcosa. Si autocorregge anche
+    all'indietro, perche' un ciclo saltato lascia piu' budget a quelli dopo.
+
+    Limite dichiarato: sotto le 24 query al giorno la copertura oraria completa
+    e' impossibile per costruzione — non si possono coprire 24 ore con meno di
+    24 domande — e il lotto minimo di 1 fa consumare il budget nelle prime ore.
+    Chi vuole misure a tutte le ore deve tenere DAILY_QUERY_BUDGET >= 24.
     """
-    quota_oraria = math.ceil(settings.daily_query_budget / 24)
-    usate = await query_usate_oggi(session, settings)
-    return max(0, min(quota_oraria, settings.daily_query_budget - usate))
+    adesso = adesso or datetime.now(ZoneInfo(settings.tz))
+    usate = await query_usate_oggi(session, settings, adesso=adesso)
+    rimanenti = settings.daily_query_budget - usate
+    if rimanenti <= 0:
+        return 0
+
+    ore_rimaste = 24 - adesso.hour  # inclusa quella corrente
+    nominale = math.ceil(settings.daily_query_budget / 24)
+    return max(0, min(math.ceil(rimanenti / ore_rimaste), rimanenti, nominale * FATTORE_RECUPERO))
 
 
 async def riconcilia_run_interrotti(session: AsyncSession) -> int:
@@ -100,10 +132,18 @@ async def job_ciclo_orario(fabbrica: async_sessionmaker[AsyncSession], settings:
     async with fabbrica() as session:
         quante = await quante_query_ora(session, settings)
         if quante == 0:
-            log.info(
-                "budget giornaliero di query esaurito: ciclo saltato",
-                budget=settings.daily_query_budget,
+            # Il salto si SCRIVE, non si logga soltanto. Il tetto di spesa gia'
+            # lasciava una riga `skipped_budget` visibile in «Ultimi cicli»;
+            # questo ramo no, e l'ora mancante era indistinguibile da un
+            # servizio fermo. Due modi diversi di saltare un ciclo devono
+            # lasciare la stessa traccia, altrimenti la meta' invisibile e'
+            # quella che fa perdere un pomeriggio a capire cosa sia successo.
+            motivo = (
+                f"budget di query esaurito: {settings.daily_query_budget} query gia' sondate oggi"
             )
+            session.add(Run(status="skipped_budget", kind="hourly", notes=motivo))
+            await session.commit()
+            log.info("ciclo saltato", motivo=motivo, budget=settings.daily_query_budget)
             return
         try:
             await runner.esegui_ciclo(session, quante=quante, kind="hourly", settings=settings)

@@ -14,7 +14,11 @@ export function StatoSistema() {
 
   const salute = useQuery({ queryKey: ["salute"], queryFn: api.salute, refetchInterval: 60_000 });
   const costi = useQuery({ queryKey: ["costi"], queryFn: api.costi });
-  const run = useQuery({ queryKey: ["run"], queryFn: () => api.run(15) });
+  // 25 e non 15: il ciclo e' orario, quindi servono almeno 24 righe perche' la
+  // tabella copra una giornata intera. Con 15 si vedeva una finestra di quindici
+  // ore e le ore fuori da quella finestra sembravano un'interruzione del
+  // servizio — che e' esattamente l'equivoco per cui questa tabella esiste.
+  const run = useQuery({ queryKey: ["run"], queryFn: () => api.run(25) });
 
   const esegui = useMutation({
     mutationFn: () => api.eseguiOra(5),
@@ -140,6 +144,11 @@ export function StatoSistema() {
       {/* Cicli */}
       <div className="mt-5">
         <h3 className="text-sm font-medium">Ultimi cicli</h3>
+        <p className="mt-0.5 max-w-prose text-xs text-lavagna-60">
+          Il ciclo parte al minuto 7 di ogni ora, tutte le 24. Le ultime 25 esecuzioni, cioè
+          poco più di una giornata: se manca un'ora, o è elencata come saltata con il motivo,
+          oppure il servizio era fermo.
+        </p>
         {run.error ? (
           <StatoErrore errore={run.error} riprova={() => void run.refetch()} />
         ) : run.isPending ? (

@@ -167,9 +167,11 @@ export const GLOSSARIO = {
   ciclo: {
     termine: "Ciclo",
     misura:
-      "L'insieme dei probe generati e inviati insieme. Il ciclo automatico parte al minuto 7 di ogni ora.",
+      "L'insieme dei probe generati e inviati insieme. Il ciclo automatico parte al minuto 7 di ogni ora, tutte le 24: il budget giornaliero di domande si distribuisce sulle ore che restano, così anche l'ultima ora del giorno viene misurata.",
     lettura:
       "«Esegui un ciclo» ne avvia uno subito, senza aspettare l'ora. Un ciclo manuale è marcato come tale e resta distinguibile nei grafici.",
+    attenzione:
+      "Un'ora può mancare per due motivi, entrambi elencati in «Ultimi cicli» con la ragione: il budget di domande del giorno è finito, oppure è scattato il tetto di spesa. Nel secondo caso i cicli restano fermi fino a mezzanotte, quindi un tetto troppo basso concentra tutte le misure nelle prime ore della notte.",
   },
 
   strategia: {

@@ -170,28 +170,120 @@ class TestRollup:
 
 
 class TestBudgetOrario:
-    async def test_il_tetto_giornaliero_e_un_tetto_non_unapprossimazione(self, session, dati):
-        """ceil(200/24)=9 per 24 ore farebbe 216: piu' del budget dichiarato."""
+    """L'ora e' iniettata: la dimensione del lotto dipende dalle ore che
+    restano nel giorno, e un test che leggesse l'orologio darebbe risultati
+    diversi a seconda di quando lo si lancia."""
+
+    def _ora(self, h: int) -> datetime:
+        return datetime.now(ROMA).replace(hour=h, minute=7, second=0, microsecond=0)
+
+    async def test_il_budget_copre_tutte_le_ventiquattro_ore(self, session):
+        """Regressione: la fascia serale restava scoperta ogni giorno.
+
+        Con `ceil(budget/24)` fisso, 200 query al giorno davano 9 all'ora, ma
+        9 x 24 = 216 > 200: il budget finiva alle 22 e le ultime due ore erano
+        vuote. Nei dati sembrava un calo di attivita' notturna dei motori,
+        mentre era un difetto di aritmetica.
+
+        Si simula la giornata intera consumando davvero il budget — probe veri
+        nel database — invece di rifare il calcolo nel test: una copia della
+        formula verificherebbe solo se stessa.
+        """
         settings = get_settings().model_copy(update={"daily_query_budget": 200})
-        quante = await quante_query_ora(session, settings)
-        assert quante == 9  # quota oraria, budget ampiamente residuo
+        per_ora: list[int] = []
 
-        # Budget quasi esaurito: si prende solo cio' che resta.
-        settings = get_settings().model_copy(update={"daily_query_budget": 3})
-        # `dati` ha sondato 2 query distinte oggi.
-        assert await quante_query_ora(session, settings) == 1
+        for h in range(24):
+            quante = await quante_query_ora(session, settings, adesso=self._ora(h))
+            per_ora.append(quante)
 
+            run = Run(status="ok", kind="hourly")
+            session.add(run)
+            await session.flush()
+            for i in range(quante):
+                q = Query(
+                    text=f"domanda numero {i} dell'ora {h}, abbastanza lunga da valere?",
+                    text_hash=f"h{h}-{i}",
+                    strategy="keyword_intent",
+                    generator="template",
+                )
+                session.add(q)
+                await session.flush()
+                session.add(
+                    Probe(
+                        run_id=run.id,
+                        query_id=q.id,
+                        provider="openai",
+                        model="gpt-5.6-luna",
+                        mode="retrieval",
+                        status="ok",
+                        created_at=self._ora(h).astimezone(UTC),
+                    )
+                )
+            await session.flush()
+
+        assert 0 not in per_ora, f"ore scoperte: {per_ora}"
+        assert len(per_ora) == 24
+        assert sum(per_ora) == 200, f"il budget non torna: {per_ora}"
+
+    @pytest.mark.parametrize("budget", [24, 48, 200, 1000])
+    async def test_lultima_ora_non_e_mai_vuota_se_resta_budget(self, session, dati, budget):
+        """E' la garanzia h24: finche' c'e' budget, le 23 sondano.
+
+        Prima l'ultima ora era la prima a restare a secco, perche' la quota
+        fissa `ceil(budget/24)` consumava piu' del budget nell'arco del giorno.
+        """
+        settings = get_settings().model_copy(update={"daily_query_budget": budget})
+        assert await quante_query_ora(session, settings, adesso=self._ora(23)) > 0
+
+    async def test_il_recupero_di_ore_perdute_ha_un_tetto(self, session, dati):
+        """Un container spento mezza giornata non deve concentrare tutto il
+        budget in un lotto solo: costo in un'ora sola e campione tutto nella
+        stessa fascia."""
+        settings = get_settings().model_copy(update={"daily_query_budget": 200})
+        nominale = 9  # ceil(200/24)
+        assert await quante_query_ora(session, settings, adesso=self._ora(23)) == nominale * 2
+
+    async def test_budget_esaurito_da_zero(self, session, dati):
         settings = get_settings().model_copy(update={"daily_query_budget": 2})
-        assert await quante_query_ora(session, settings) == 0
+        assert await quante_query_ora(session, settings, adesso=self._ora(10)) == 0
 
     async def test_conta_query_distinte_non_probe(self, session, dati):
-        """La stessa domanda su quattro provider consuma un'unita' di budget."""
-        settings = get_settings().model_copy(update={"daily_query_budget": 100})
-        # 7 probe ma 2 query distinte.
-        assert (
-            await quante_query_ora(session, settings) == min(5, 100 - 2)
-            or await quante_query_ora(session, settings) == 5
+        """La stessa domanda su quattro provider consuma un'unita' di budget.
+
+        `dati` ha 7 probe ma 2 query distinte: con un budget di 3 ne resta una.
+        """
+        settings = get_settings().model_copy(update={"daily_query_budget": 3})
+        assert await quante_query_ora(session, settings, adesso=self._ora(23)) == 1
+
+    async def test_un_ciclo_saltato_lascia_una_riga_visibile(self, engine, session, dati):
+        """Un'ora mancante deve avere una spiegazione, non essere un buco.
+
+        Il tetto di SPESA gia' scriveva `skipped_budget`, che la dashboard
+        mostra in «Ultimi cicli». Il tetto di QUERY invece usciva in silenzio:
+        l'ora spariva dai dati senza lasciare traccia, e da fuori era
+        indistinguibile da un servizio fermo o da un container morto.
+        """
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        from app.services.scheduler import job_ciclo_orario
+
+        settings = get_settings().model_copy(update={"daily_query_budget": 1})
+        fabbrica = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+        await job_ciclo_orario(fabbrica, settings)
+
+        saltati = (
+            (
+                await session.execute(
+                    select(Run).where(Run.status == "skipped_budget").order_by(Run.id.desc())
+                )
+            )
+            .scalars()
+            .all()
         )
+        assert len(saltati) == 1
+        assert saltati[0].kind == "hourly"
+        assert "budget di query" in (saltati[0].notes or "")
 
 
 class TestRiconciliazione:
