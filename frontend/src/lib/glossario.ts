@@ -171,7 +171,7 @@ export const GLOSSARIO = {
     lettura:
       "«Esegui un ciclo» ne avvia uno subito, senza aspettare l'ora. Un ciclo manuale è marcato come tale e resta distinguibile nei grafici.",
     attenzione:
-      "Un'ora può mancare per due motivi, entrambi elencati in «Ultimi cicli» con la ragione: il budget di domande del giorno è finito, oppure è scattato il tetto di spesa. Nel secondo caso i cicli restano fermi fino a mezzanotte, quindi un tetto troppo basso concentra tutte le misure nelle prime ore della notte.",
+      "Ogni ora lascia una riga in «Ultimi cicli», anche quando il ciclo non è partito: budget di domande finito, tetto di spesa scattato, ciclo precedente ancora in corso, esecuzione fuori tempo, servizio fermo. Ognuna con il suo motivo. Se scatta il tetto di spesa i cicli restano fermi fino a mezzanotte, quindi un tetto troppo basso concentra tutte le misure nelle prime ore della notte.",
   },
 
   strategia: {

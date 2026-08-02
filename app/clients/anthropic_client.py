@@ -35,6 +35,7 @@ from app.clients.base import (
     RicercaNonEseguitaError,
     RisultatoProbe,
     richiesta_con_backoff,
+    timeout_probe,
 )
 from app.core.config import Settings
 
@@ -57,7 +58,7 @@ class AnthropicAdapter:
         self._settings = settings
         self._client = httpx.AsyncClient(
             base_url=BASE_URL,
-            timeout=settings.probe_timeout_seconds,
+            timeout=timeout_probe(settings.probe_timeout_seconds),
             headers={
                 "x-api-key": settings.anthropic_api_key,
                 "anthropic-version": VERSIONE_API,

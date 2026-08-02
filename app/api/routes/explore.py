@@ -263,6 +263,10 @@ async def elenco_run(
 # lotti che competono per lo stesso budget.
 _lucchetto_manuale = asyncio.Lock()
 
+# Il riferimento al task in corso: un task senza riferimenti e' legittima preda
+# del garbage collector, che lo puo' cancellare a meta' ciclo.
+_compiti_manuali: set[asyncio.Task[None]] = set()
+
 
 class EsitoAzione(BaseModel):
     avviato: bool
@@ -299,7 +303,9 @@ async def run_now(
 
                 structlog.get_logger(__name__).exception("ciclo manuale fallito")
 
-    asyncio.create_task(esegui())  # noqa: RUF006 — il ciclo si osserva da /api/runs
+    compito = asyncio.create_task(esegui())
+    _compiti_manuali.add(compito)
+    compito.add_done_callback(_compiti_manuali.discard)
     return EsitoAzione(
         avviato=True,
         messaggio=(

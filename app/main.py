@@ -26,9 +26,11 @@ from app.db.session import dispose_engine, get_sessionmaker
 from app.db.source import SourceDbWritableError, SourceTableMissingError, assert_readonly
 from app.services import pricing
 from app.services.scheduler import (
+    attendi_compiti_listener,
     crea_scheduler,
     prossime_esecuzioni,
     riconcilia_run_interrotti,
+    segna_cicli_persi,
 )
 
 log = structlog.get_logger(__name__)
@@ -54,9 +56,15 @@ async def lifespan(app: FastAPI):
 
     fabbrica = get_sessionmaker()
 
-    # 3. Un container ucciso a metà ciclo lascia un `run` eternamente "in corso".
+    # 3. Un container ucciso a metà ciclo lascia un `run` eternamente "in corso",
+    #    e le ore in cui il processo era spento non hanno lasciato nessuna riga:
+    #    prima si chiudono i run interrotti, poi si scrive il marcatore delle ore
+    #    perse — APScheduler, con il jobstore in memoria, di quei fire non sa
+    #    nulla e riparte come se niente fosse.
     async with fabbrica() as session:
         await riconcilia_run_interrotti(session)
+        if settings.scheduler_enabled:
+            await segna_cicli_persi(session, settings)
 
     scheduler: AsyncIOScheduler | None = None
     if settings.scheduler_enabled:
@@ -74,6 +82,10 @@ async def lifespan(app: FastAPI):
     finally:
         if scheduler is not None:
             scheduler.shutdown(wait=False)
+        # I listener dello scheduler scrivono le righe di salto in task
+        # separati: prima di spegnere l'engine gli si da' il tempo di finire,
+        # o una riga `skipped_*` in volo andrebbe persa proprio allo shutdown.
+        await attendi_compiti_listener()
         await dispose_engine()
         log.info("applicazione fermata")
 

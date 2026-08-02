@@ -49,6 +49,9 @@ export const ETICHETTA_STATO: Record<string, string> = {
   partial: "parziale",
   failed: "fallito",
   skipped_budget: "saltato per budget",
+  skipped_overlap: "saltato: ciclo precedente in corso",
+  skipped_misfire: "saltato: fuori tempo massimo",
+  skipped_offline: "servizio fermo",
 };
 
 export const ETICHETTA_STRATEGIA: Record<string, string> = {

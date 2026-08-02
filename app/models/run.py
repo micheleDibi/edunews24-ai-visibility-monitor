@@ -11,7 +11,20 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
-STATI_RUN = ("running", "ok", "partial", "failed", "skipped_budget")
+# I tre `skipped_*` finali distinguono PERCHE' un'ora non ha misure:
+# budget esaurito, ciclo precedente ancora in corso, esecuzione fuori tempo
+# massimo, servizio fermo. Sono modi diversi di saltare con rimedi diversi, e
+# schiacciarli su uno stato solo obbligherebbe a rileggere le note per capire.
+STATI_RUN = (
+    "running",
+    "ok",
+    "partial",
+    "failed",
+    "skipped_budget",
+    "skipped_overlap",
+    "skipped_misfire",
+    "skipped_offline",
+)
 TIPI_RUN = ("hourly", "manual", "backfill")
 
 

@@ -6,10 +6,12 @@ processo. Tre impostazioni non sono opzionali:
 * `max_instances=1` — un ciclo che dura piu' di un'ora non deve accavallarsi
   con il successivo, altrimenti due lotti competono per lo stesso budget e per
   gli stessi semafori di provider;
-* `coalesce=True` — se il processo e' stato giu' per tre ore, al ritorno si
-  esegue UN ciclo, non tre di fila;
 * `misfire_grace_time` — un'esecuzione in ritardo oltre la soglia si salta
-  invece di partire fuori tempo massimo.
+  invece di partire fuori tempo massimo;
+* la regola trasversale: OGNI modo di saltare o fallire un ciclo lascia una
+  riga in `runs` — dal job stesso, dai listener sugli eventi di APScheduler, o
+  dal marcatore d'avvio per le ore in cui il processo era spento. Un'ora senza
+  riga in produzione e' costata un pomeriggio di diagnosi: mai piu'.
 
 ## Il minuto 7
 
@@ -20,12 +22,14 @@ occultamento: e' non mettersi in coda inutilmente.
 
 from __future__ import annotations
 
+import asyncio
 import math
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import structlog
+from apscheduler.events import EVENT_JOB_MAX_INSTANCES, EVENT_JOB_MISSED
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import func, select, update
@@ -52,6 +56,13 @@ GRAZIA_MISFIRE_S = 600
 # campione tutto nella stessa fascia oraria, cioe' il contrario di una misura
 # distribuita.
 FATTORE_RECUPERO = 2
+
+# Tetto duro alla durata di un ciclo. Un ciclo normale dura minuti; uno che
+# arriva qui e' bloccato (connessione morta senza timeout, DB appeso) e va
+# interrotto d'ufficio, perche' con `max_instances=1` ogni ora in cui resta
+# appeso fa scartare il fire successivo — e APScheduler non lo ritenta mai.
+# In produzione e' costato pomeriggi interi di ore senza misure.
+TETTO_DURATA_CICLO_S = 45 * 60
 
 
 async def query_usate_oggi(
@@ -106,6 +117,121 @@ async def quante_query_ora(
     return max(0, min(math.ceil(rimanenti / ore_rimaste), rimanenti, nominale * FATTORE_RECUPERO))
 
 
+def _riga_per_evento(evento: Any) -> tuple[str, str]:
+    """Da un evento APScheduler di salto alla coppia (status, nota) della riga.
+
+    Funzione pura, separata dal listener per essere testabile senza istanziare
+    uno scheduler vero.
+    """
+    if evento.code == EVENT_JOB_MAX_INSTANCES:
+        # JobSubmissionEvent: `scheduled_run_times` e' una lista (coalesce puo'
+        # accorpare piu' fire in una submission sola).
+        orari = ", ".join(f"{quando:%H:%M}" for quando in evento.scheduled_run_times)
+        return (
+            "skipped_overlap",
+            f"saltato: il ciclo precedente era ancora in corso all'orario previsto ({orari}). "
+            "APScheduler non ritenta i fire scartati per max_instances",
+        )
+    # JobExecutionEvent (EVENT_JOB_MISSED): `scheduled_run_time` singolare.
+    return (
+        "skipped_misfire",
+        f"saltato: l'esecuzione delle {evento.scheduled_run_time:%H:%M} e' arrivata "
+        f"oltre il tempo di grazia di {GRAZIA_MISFIRE_S // 60} minuti (processo bloccato)",
+    )
+
+
+# I task creati dai listener: senza un riferimento, il garbage collector puo'
+# cancellarli a meta' scrittura.
+_compiti_listener: set[asyncio.Task[None]] = set()
+
+
+async def _scrivi_riga_di_salto(
+    fabbrica: async_sessionmaker[AsyncSession], stato: str, nota: str
+) -> None:
+    try:
+        # Un minuto di tetto anche qui: durante una partizione di rete questi
+        # task si accumulerebbero appesi, uno per ogni ora saltata.
+        async with asyncio.timeout(60), fabbrica() as session:
+            session.add(Run(status=stato, kind="hourly", finished_at=func.now(), notes=nota))
+            await session.commit()
+        log.warning("ciclo saltato dallo scheduler", stato=stato, nota=nota)
+    except Exception:
+        log.exception("impossibile registrare il ciclo saltato", stato=stato)
+
+
+async def attendi_compiti_listener(timeout: float = 5.0) -> None:
+    """Allo shutdown: da' ai task dei listener il tempo di finire la scrittura.
+
+    Senza quest'attesa, `scheduler.shutdown` seguito da `dispose_engine` puo'
+    troncare la riga `skipped_overlap`/`skipped_misfire` in volo.
+    """
+    if _compiti_listener:
+        await asyncio.wait(set(_compiti_listener), timeout=timeout)
+
+
+async def segna_cicli_persi(
+    session: AsyncSession, settings: Settings, *, adesso: datetime | None = None
+) -> int:
+    """All'avvio: le ore di ciclo trascorse senza ALCUNA riga diventano una
+    riga `skipped_offline` che le conta ed elenca.
+
+    Con il jobstore in memoria APScheduler non sa nulla dei fire persi mentre
+    il processo era spento: al riavvio il job rinasce vuoto e il prossimo fire
+    e' calcolato SOLO in avanti, senza log ne' eventi (verificato sul codice di
+    APScheduler 3.11, `schedulers/base.py`: `trigger.get_next_fire_time(None,
+    now)`). Vale anche per un fire mancato da pochi secondi: non esiste nessun
+    recupero, nemmeno dentro il tempo di grazia, perche' non c'e' nessun fire
+    pendente da coalizzare. Percio' si conta perso OGNI minuto 7 attraversato
+    fino ad `adesso` — questa funzione gira prima di `scheduler.start()`,
+    quindi non puo' contare un fire che verra' ancora eseguito.
+
+    Imprecisioni note e accettate: nella notte del cambio d'ora il conteggio
+    puo' sbagliare di uno, e un avvio che attraversa esattamente un minuto 7
+    (questa funzione gira alle HH:06:59, lo scheduler parte alle HH:07:01) puo'
+    perdere quel fire senza contarlo.
+    """
+    fuso = ZoneInfo(settings.tz)
+    adesso = (adesso or datetime.now(fuso)).astimezone(fuso)
+    ultimo = (await session.execute(select(func.max(Run.started_at)))).scalar_one_or_none()
+    if ultimo is None:
+        return 0  # primo avvio in assoluto: nessuna storia, quindi nessun buco
+
+    candidato = ultimo.astimezone(fuso).replace(minute=7, second=0, microsecond=0)
+    if candidato <= ultimo.astimezone(fuso):
+        candidato += timedelta(hours=1)
+
+    persi: list[datetime] = []
+    while candidato <= adesso:
+        persi.append(candidato)
+        candidato += timedelta(hours=1)
+    if not persi:
+        return 0
+
+    if len(persi) == 1:
+        dettaglio = f"il ciclo delle {persi[0]:%H:%M} del {persi[0]:%d/%m} non e' mai partito"
+    else:
+        dettaglio = (
+            f"{len(persi)} cicli mai partiti, dalle {persi[0]:%H:%M} del {persi[0]:%d/%m} "
+            f"alle {persi[-1]:%H:%M} del {persi[-1]:%d/%m}"
+        )
+    session.add(
+        Run(
+            status="skipped_offline",
+            kind="hourly",
+            finished_at=func.now(),
+            notes=f"servizio fermo: {dettaglio}",
+        )
+    )
+    await session.commit()
+    log.warning(
+        "cicli persi durante il fermo",
+        quanti=len(persi),
+        dal=str(persi[0]),
+        al=str(persi[-1]),
+    )
+    return len(persi)
+
+
 async def riconcilia_run_interrotti(session: AsyncSession) -> int:
     """Chiude i `runs` rimasti `running` da un processo ucciso.
 
@@ -129,28 +255,126 @@ async def riconcilia_run_interrotti(session: AsyncSession) -> int:
 
 
 async def job_ciclo_orario(fabbrica: async_sessionmaker[AsyncSession], settings: Settings) -> None:
-    async with fabbrica() as session:
-        quante = await quante_query_ora(session, settings)
-        if quante == 0:
-            # Il salto si SCRIVE, non si logga soltanto. Il tetto di spesa gia'
-            # lasciava una riga `skipped_budget` visibile in «Ultimi cicli»;
-            # questo ramo no, e l'ora mancante era indistinguibile da un
-            # servizio fermo. Due modi diversi di saltare un ciclo devono
-            # lasciare la stessa traccia, altrimenti la meta' invisibile e'
-            # quella che fa perdere un pomeriggio a capire cosa sia successo.
-            motivo = (
-                f"budget di query esaurito: {settings.daily_query_budget} query gia' sondate oggi"
+    """Il ciclo orario. Regola unica: QUALUNQUE esito lascia una riga in `runs`.
+
+    Meta' delle ore di un giorno di produzione e' sparita senza traccia perche'
+    i fallimenti prima della creazione del run e i cicli rimasti appesi non
+    scrivevano niente. Ogni ramo di questo job — saltato, fallito prima di
+    partire, interrotto per durata — ora scrive la propria riga.
+    """
+    tetto: asyncio.Timeout | None = None
+    try:
+        # Il tetto avvolge TUTTO il corpo, pre-check compreso: lo scenario che
+        # lo motiva — una connessione al DB rimasta appesa — puo' colpire
+        # `quante_query_ora` esattamente come il ciclo vero, e un job appeso
+        # li' fuori dal tetto bloccherebbe per sempre tutte le ore successive.
+        async with asyncio.timeout(TETTO_DURATA_CICLO_S) as tetto:
+            async with fabbrica() as session:
+                quante = await quante_query_ora(session, settings)
+                if quante == 0:
+                    # Il salto si SCRIVE, non si logga soltanto: un'ora senza
+                    # riga e' indistinguibile da un servizio fermo.
+                    motivo = (
+                        f"budget di query esaurito: {settings.daily_query_budget} "
+                        "query gia' sondate oggi"
+                    )
+                    session.add(
+                        Run(
+                            status="skipped_budget",
+                            kind="hourly",
+                            finished_at=func.now(),
+                            notes=motivo,
+                        )
+                    )
+                    await session.commit()
+                    log.info("ciclo saltato", motivo=motivo, budget=settings.daily_query_budget)
+                    return
+
+            async with fabbrica() as session:
+                await runner.esegui_ciclo(session, quante=quante, kind="hourly", settings=settings)
+    except TimeoutError as exc:
+        if tetto is not None and tetto.expired():
+            # Il NOSTRO tetto: il ciclo era bloccato, la cancellazione lo ha
+            # interrotto e la sua eventuale riga `running` va chiusa qui.
+            log.error(
+                "ciclo orario interrotto: oltre il tetto di durata",
+                tetto_min=TETTO_DURATA_CICLO_S // 60,
             )
-            session.add(Run(status="skipped_budget", kind="hourly", notes=motivo))
-            await session.commit()
-            log.info("ciclo saltato", motivo=motivo, budget=settings.daily_query_budget)
-            return
-        try:
-            await runner.esegui_ciclo(session, quante=quante, kind="hourly", settings=settings)
-        except Exception:
-            # Un'eccezione qui non deve uccidere lo scheduler: il ciclo
-            # successivo deve poter partire comunque.
+            nota = (
+                f"interrotto d'ufficio dopo {TETTO_DURATA_CICLO_S // 60} minuti: "
+                "il ciclo era bloccato e avrebbe fatto saltare le ore successive"
+            )
+        else:
+            # Un TimeoutError altrui (driver, pool): e' un fallimento comune e
+            # non va raccontato come intervento del tetto.
             log.exception("ciclo orario fallito")
+            nota = f"ciclo fallito: TimeoutError: {exc}"[:500]
+        await _lascia_traccia_fallimento(fabbrica, nota)
+    except Exception as exc:
+        # Un'eccezione qui non deve uccidere lo scheduler: il ciclo successivo
+        # deve poter partire comunque. La traccia si scrive SEMPRE, senza
+        # provare a indovinare se `esegui_ciclo` ha gia' chiuso la sua riga:
+        # `_lascia_traccia_fallimento` controlla da solo e non duplica.
+        log.exception("ciclo orario fallito")
+        await _lascia_traccia_fallimento(
+            fabbrica, f"ciclo fallito: {type(exc).__name__}: {exc}"[:500]
+        )
+
+
+# Finestra entro cui una riga si considera «di questo ciclo». Piu' larga della
+# grazia di misfire, molto piu' stretta di un'ora: distingue la riga appena
+# creata da una `running` stantia di ore prima, la cui storia non va riscritta.
+FINESTRA_TRACCIA_S = 15 * 60
+
+
+async def _lascia_traccia_fallimento(fabbrica: async_sessionmaker[AsyncSession], nota: str) -> None:
+    """Garantisce che il ciclo appena fallito abbia una riga chiusa.
+
+    Tre casi, in ordine: la riga `running` recente del ciclo interrotto si
+    chiude con la nota; se non c'e' ma una riga recente esiste gia' (il runner
+    l'ha chiusa da solo prima di rilanciare l'eccezione), non si scrive nulla;
+    se non esiste proprio — il fallimento e' avvenuto prima di crearla, o il
+    suo commit e' fallito — se ne inserisce una nuova. Le righe `running` piu'
+    vecchie della finestra restano com'erano: sono un'altra storia, e
+    intestargli la nota di quest'ora riscriverebbe il passato
+    (`riconcilia_run_interrotti` le sistema al riavvio).
+    """
+    try:
+        async with asyncio.timeout(60):
+            soglia = datetime.now(UTC) - timedelta(seconds=FINESTRA_TRACCIA_S)
+            async with fabbrica() as session:
+                risultato = await session.execute(
+                    update(Run)
+                    .where(
+                        Run.status == "running",
+                        Run.kind == "hourly",
+                        Run.started_at >= soglia,
+                    )
+                    .values(status="failed", finished_at=func.now(), notes=nota)
+                )
+                if not (cast("CursorResult[Any]", risultato).rowcount or 0):
+                    gia_scritta = (
+                        await session.execute(
+                            select(func.count())
+                            .select_from(Run)
+                            .where(Run.kind == "hourly", Run.started_at >= soglia)
+                        )
+                    ).scalar_one()
+                    if not gia_scritta:
+                        session.add(
+                            Run(
+                                status="failed",
+                                kind="hourly",
+                                finished_at=func.now(),
+                                notes=nota,
+                            )
+                        )
+                await session.commit()
+    except Exception:
+        # Se nemmeno questo riesce (con il suo tetto di un minuto) il database
+        # e' irraggiungibile: resta il log. Ore cosi' non sono ricostruibili
+        # nemmeno a posteriori — senza database non si scrive da nessuna parte.
+        log.exception("impossibile scrivere la riga del ciclo fallito")
 
 
 async def job_manutenzione(fabbrica: async_sessionmaker[AsyncSession], settings: Settings) -> None:
@@ -183,7 +407,13 @@ def crea_scheduler(
         args=[fabbrica, settings],
         id=ID_CICLO_ORARIO,
         name="lotto di probe orario",
-        coalesce=True,
+        # `coalesce=False` di proposito: con la grazia di 10 minuti su un job
+        # orario al massimo UN fire arretrato puo' essere ancora eseguibile,
+        # quindi la semantica di esecuzione non cambia. Cambia la traccia: con
+        # True i fire accumulati da un loop bloccato venivano accorpati PRIMA
+        # del controllo di misfire e sparivano senza evento; con False ognuno
+        # passa dal controllo, emette EVENT_JOB_MISSED e lascia la sua riga.
+        coalesce=False,
         max_instances=1,
         misfire_grace_time=GRAZIA_MISFIRE_S,
         replace_existing=True,
@@ -199,6 +429,27 @@ def crea_scheduler(
         misfire_grace_time=3600,
         replace_existing=True,
     )
+
+    def su_ciclo_saltato(evento: Any) -> None:
+        """Un fire scartato da APScheduler diventa una riga, non solo un log.
+
+        `max_instances=1` scarta il fire se il ciclo precedente e' ancora in
+        corso; la grace scaduta lo scarta se il processo era bloccato. In
+        entrambi i casi APScheduler emette un evento e passa oltre: senza
+        questa scrittura l'ora sparirebbe dalla dashboard. Il listener e'
+        sincrono e gira nel thread dell'event loop (garantito da
+        AsyncIOScheduler), quindi `get_running_loop` qui e' sicuro.
+        """
+        if evento.job_id != ID_CICLO_ORARIO:
+            return
+        stato, nota = _riga_per_evento(evento)
+        compito = asyncio.get_running_loop().create_task(
+            _scrivi_riga_di_salto(fabbrica, stato, nota)
+        )
+        _compiti_listener.add(compito)
+        compito.add_done_callback(_compiti_listener.discard)
+
+    scheduler.add_listener(su_ciclo_saltato, EVENT_JOB_MISSED | EVENT_JOB_MAX_INSTANCES)
     return scheduler
 
 

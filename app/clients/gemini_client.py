@@ -59,6 +59,7 @@ from app.clients.base import (
     RicercaNonEseguitaError,
     RisultatoProbe,
     richiesta_con_backoff,
+    timeout_probe,
 )
 from app.core.config import Settings
 
@@ -92,7 +93,7 @@ class GeminiAdapter:
         self._settings = settings
         self._client = httpx.AsyncClient(
             base_url=BASE_URL,
-            timeout=settings.probe_timeout_seconds,
+            timeout=timeout_probe(settings.probe_timeout_seconds),
             headers={
                 "x-goog-api-key": settings.gemini_api_key,
                 "Content-Type": "application/json",

@@ -130,12 +130,26 @@ class ProviderAdapter(Protocol):
 # sulle risposte 429 (verificato il 2026-07-30). Il backoff non puo' dipendere
 # da qualcosa che potrebbe non arrivare: esponenziale con jitter, e l'header lo
 # si usa solo se c'e'.
-STATI_DA_RITENTARE = frozenset({408, 409, 429, 500, 502, 503, 504})
+# 529 e' l'`overloaded_error` di Anthropic: transitorio per definizione, e
+# sotto carico arriva con regolarita'. Non ritentarlo trasformava un ingorgo
+# di pochi secondi in un probe fallito a ogni ciclo.
+STATI_DA_RITENTARE = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
 
 
 def _attesa(tentativo: int, base: float, tetto: float) -> float:
     """Esponenziale con jitter pieno: evita che piu' probe ritentino in coro."""
     return min(tetto, base * (2**tentativo)) * (0.5 + random.random() / 2)
+
+
+def timeout_probe(secondi: float) -> httpx.Timeout:
+    """Timeout per fase, non un numero unico per tutto.
+
+    `secondi` governa la LETTURA, che con la web search puo' legittimamente
+    durare piu' di un minuto. Connect e pool invece restano brevi: un host
+    irraggiungibile deve fallire in dieci secondi, non consumare l'intero
+    budget del probe prima ancora di aver mandato la richiesta.
+    """
+    return httpx.Timeout(secondi, connect=10.0, pool=10.0)
 
 
 async def richiesta_con_backoff(
@@ -149,6 +163,7 @@ async def richiesta_con_backoff(
 ) -> httpx.Response:
     """POST con ritenti su 429/5xx. Solleva `ProviderError` tipizzato."""
     ultimo: Exception | None = None
+    ultimo_status: int | None = None
 
     for tentativo in range(tentativi):
         try:
@@ -158,6 +173,18 @@ async def richiesta_con_backoff(
             if tentativo == tentativi - 1:
                 raise ProviderTimeoutError(
                     f"{provider}: timeout dopo {tentativi} tentativi"
+                ) from exc
+            await asyncio.sleep(_attesa(tentativo, base, tetto))
+            continue
+        except httpx.TransportError as exc:
+            # ConnectError, ReadError, RemoteProtocolError: i blip transitori
+            # di rete (keep-alive resettata dal peer, handshake fallito una
+            # volta). Meritano un ritento quanto un timeout: fallire al primo
+            # colpo era una delle due cause dei probe persi a ogni ciclo.
+            ultimo = exc
+            if tentativo == tentativi - 1:
+                raise ProviderError(
+                    f"{provider}: errore di rete dopo {tentativi} tentativi: {exc}"
                 ) from exc
             await asyncio.sleep(_attesa(tentativo, base, tetto))
             continue
@@ -171,7 +198,10 @@ async def richiesta_con_backoff(
                 )
             return risposta
 
-        ultimo = ProviderError(f"{provider}: HTTP {risposta.status_code}")
+        # Il corpo si conserva anche qui: un «HTTP 503» muto in `probes.error`
+        # non dice se era un overload, una quota o una manutenzione.
+        ultimo_status = risposta.status_code
+        ultimo = ProviderError(f"{provider}: HTTP {risposta.status_code}: {risposta.text[:200]}")
         if tentativo == tentativi - 1:
             break
 
@@ -189,6 +219,9 @@ async def richiesta_con_backoff(
         )
         await asyncio.sleep(attesa)
 
-    if isinstance(ultimo, ProviderError) and "429" in str(ultimo):
-        raise RateLimitError(f"{provider}: rate limit dopo {tentativi} tentativi")
+    # La classificazione guarda lo STATUS CODE, non la stringa dell'errore: un
+    # corpo di risposta che contenesse "429" per altri motivi non deve
+    # travestire un 503 da rate limit.
+    if ultimo_status == 429:
+        raise RateLimitError(f"{provider}: rate limit dopo {tentativi} tentativi ({ultimo})")
     raise ProviderError(f"{provider}: esauriti i tentativi ({ultimo})")

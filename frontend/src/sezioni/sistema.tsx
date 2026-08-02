@@ -145,9 +145,10 @@ export function StatoSistema() {
       <div className="mt-5">
         <h3 className="text-sm font-medium">Ultimi cicli</h3>
         <p className="mt-0.5 max-w-prose text-xs text-lavagna-60">
-          Il ciclo parte al minuto 7 di ogni ora, tutte le 24. Le ultime 25 esecuzioni, cioè
-          poco più di una giornata: se manca un'ora, o è elencata come saltata con il motivo,
-          oppure il servizio era fermo.
+          Il ciclo parte al minuto 7 di ogni ora, tutte le 24, e ogni ora lascia una riga:
+          eseguita, saltata con il motivo, oppure conteggiata in una riga «servizio fermo»
+          scritta al riavvio. Qui le ultime 25, poco più di una giornata: un'ora del tutto
+          assente indica un fermo ancora in corso.
         </p>
         {run.error ? (
           <StatoErrore errore={run.error} riprova={() => void run.refetch()} />
@@ -190,9 +191,11 @@ export function StatoSistema() {
                             ? "alloro"
                             : r.status === "partial"
                               ? "ottone"
-                              : r.status === "skipped_budget"
-                                ? "grafite"
-                                : "sigillo"
+                              : r.status === "running"
+                                ? "timbro"
+                                : r.status.startsWith("skipped")
+                                  ? "grafite"
+                                  : "sigillo"
                         }
                       >
                         {ETICHETTA_STATO[r.status] ?? r.status}

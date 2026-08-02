@@ -2,21 +2,27 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.config import get_settings
 from app.models import DailyRollup, Probe, Query, Run
 from app.services import retention, rollup
 from app.services.scheduler import (
+    _riga_per_evento,
+    _scrivi_riga_di_salto,
     crea_scheduler,
+    job_ciclo_orario,
     prossime_esecuzioni,
     quante_query_ora,
     riconcilia_run_interrotti,
+    segna_cicli_persi,
 )
 
 ROMA = ZoneInfo("Europe/Rome")
@@ -377,8 +383,13 @@ class TestConfigurazioneScheduler:
         orario = job["ciclo_orario"]
         # Un ciclo che sfora l'ora non deve accavallarsi con il successivo.
         assert orario.max_instances == 1
-        # Dopo un downtime si esegue UN ciclo, non uno per ogni ora perduta.
-        assert orario.coalesce is True
+        # `coalesce=False` di proposito: con True i fire accumulati da un loop
+        # bloccato venivano accorpati PRIMA del controllo di misfire e
+        # sparivano senza evento ne' riga; con False ognuno emette il proprio
+        # EVENT_JOB_MISSED. La semantica di esecuzione non cambia, perche' con
+        # grazia di 10 minuti su un job orario al massimo UN fire arretrato e'
+        # ancora eseguibile.
+        assert orario.coalesce is False
         assert orario.misfire_grace_time == 600
         # Minuto 7: allo scoccare dell'ora ci va tutto il mondo.
         assert "minute='7'" in str(orario.trigger)
@@ -387,3 +398,281 @@ class TestConfigurazioneScheduler:
 
     def test_prossime_esecuzioni_su_scheduler_spento(self):
         assert prossime_esecuzioni(None) == {}
+
+
+class TestTracciaDeiSalti:
+    """Regola unica del ciclo orario: QUALUNQUE esito lascia una riga.
+
+    In produzione meta' delle ore di un giorno e' sparita senza traccia:
+    fallimenti prima della creazione del run, cicli rimasti appesi che facevano
+    scartare i fire successivi, fire scartati da APScheduler. Ognuno di questi
+    percorsi ora scrive, e questi test lo inchiodano.
+    """
+
+    async def test_un_fallimento_prima_del_ciclo_lascia_una_riga(
+        self, engine, session, monkeypatch
+    ):
+        """Un errore del DB nel calcolo del lotto non deve far sparire l'ora."""
+        import app.services.scheduler as modulo
+
+        async def esplode(*args, **kwargs):
+            raise RuntimeError("pool di connessioni esaurito")
+
+        monkeypatch.setattr(modulo, "quante_query_ora", esplode)
+        fabbrica = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+        await job_ciclo_orario(fabbrica, get_settings())
+
+        riga = (await session.execute(select(Run).where(Run.status == "failed"))).scalars().one()
+        assert riga.kind == "hourly"
+        assert "ciclo fallito" in (riga.notes or "")
+        assert "pool di connessioni esaurito" in (riga.notes or "")
+
+    async def test_un_fallimento_del_runner_prima_della_riga_lascia_comunque_una_riga(
+        self, engine, session, monkeypatch
+    ):
+        """Se `esegui_ciclo` esplode prima di riuscire a creare la sua riga
+        (es. il commit iniziale fallisce), la riga la scrive il job. Era la
+        finestra scoperta del vecchio flag `ciclo_partito`."""
+        from app.services import runner as modulo_runner
+
+        async def esplode_subito(sessione, **kwargs):
+            raise RuntimeError("commit iniziale rifiutato")
+
+        monkeypatch.setattr(modulo_runner, "esegui_ciclo", esplode_subito)
+        fabbrica = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+        await job_ciclo_orario(fabbrica, get_settings())
+
+        riga = (await session.execute(select(Run).where(Run.status == "failed"))).scalars().one()
+        assert "commit iniziale rifiutato" in (riga.notes or "")
+
+    async def test_la_riga_chiusa_dal_runner_non_viene_duplicata(
+        self, engine, session, monkeypatch
+    ):
+        """`esegui_ciclo` chiude da solo la propria riga prima di rilanciare:
+        il job non deve aggiungerne una seconda per lo stesso ciclo."""
+        from app.services import runner as modulo_runner
+
+        async def fallisce_dopo_aver_chiuso(sessione, **kwargs):
+            sessione.add(
+                Run(
+                    status="failed",
+                    kind="hourly",
+                    finished_at=datetime.now(UTC),
+                    notes="eccezione durante il ciclo: chiusa dal runner",
+                )
+            )
+            await sessione.commit()
+            raise RuntimeError("rilanciata dopo la chiusura")
+
+        monkeypatch.setattr(modulo_runner, "esegui_ciclo", fallisce_dopo_aver_chiuso)
+        fabbrica = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+        await job_ciclo_orario(fabbrica, get_settings())
+
+        righe = (await session.execute(select(Run).where(Run.kind == "hourly"))).scalars().all()
+        assert len(righe) == 1
+        assert "chiusa dal runner" in (righe[0].notes or "")
+
+    async def test_una_riga_running_stantia_non_viene_riscritta(self, engine, session, monkeypatch):
+        """Un run rimasto `running` da ore e' un'altra storia: intestargli la
+        nota dell'ora corrente riscriverebbe il passato, e sopprimerebbe la
+        riga dell'ora corrente."""
+        from app.services import runner as modulo_runner
+
+        session.add(
+            Run(status="running", kind="hourly", started_at=datetime.now(UTC) - timedelta(hours=3))
+        )
+        await session.commit()
+
+        async def esplode_subito(sessione, **kwargs):
+            raise RuntimeError("guasto dell'ora corrente")
+
+        monkeypatch.setattr(modulo_runner, "esegui_ciclo", esplode_subito)
+        fabbrica = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+        await job_ciclo_orario(fabbrica, get_settings())
+
+        stantia = (
+            (await session.execute(select(Run).where(Run.status == "running"))).scalars().one()
+        )
+        assert stantia.notes is None, "la riga stantia non va toccata"
+        nuova = (await session.execute(select(Run).where(Run.status == "failed"))).scalars().one()
+        assert "guasto dell'ora corrente" in (nuova.notes or "")
+
+    async def test_un_ciclo_bloccato_viene_interrotto_e_chiuso(
+        self, engine, session, dati, monkeypatch
+    ):
+        """Con `max_instances=1` un ciclo appeso fa scartare in silenzio tutte
+        le ore successive: oltre il tetto di durata si interrompe d'ufficio e
+        la sua riga `running` si chiude come `failed`, con il motivo."""
+        import app.services.scheduler as modulo
+        from app.services import runner as modulo_runner
+
+        async def ciclo_bloccato(sessione, **kwargs):
+            sessione.add(Run(status="running", kind="hourly"))
+            await sessione.commit()
+            await asyncio.sleep(30)
+
+        monkeypatch.setattr(modulo_runner, "esegui_ciclo", ciclo_bloccato)
+        monkeypatch.setattr(modulo, "TETTO_DURATA_CICLO_S", 0.2)
+        fabbrica = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+        await job_ciclo_orario(fabbrica, get_settings())
+
+        riga = (
+            (await session.execute(select(Run).where(Run.kind == "hourly", Run.status == "failed")))
+            .scalars()
+            .one()
+        )
+        assert "interrotto d'ufficio" in (riga.notes or "")
+        assert riga.finished_at is not None
+        appesi = (
+            await session.execute(
+                select(func.count()).select_from(Run).where(Run.status == "running")
+            )
+        ).scalar_one()
+        assert appesi == 0
+
+    def test_levento_max_instances_diventa_skipped_overlap(self):
+        from types import SimpleNamespace
+
+        from apscheduler.events import EVENT_JOB_MAX_INSTANCES
+
+        evento = SimpleNamespace(
+            code=EVENT_JOB_MAX_INSTANCES,
+            scheduled_run_times=[datetime(2026, 8, 2, 15, 7, tzinfo=ROMA)],
+        )
+        stato, nota = _riga_per_evento(evento)
+        assert stato == "skipped_overlap"
+        assert "15:07" in nota
+
+    def test_levento_missed_diventa_skipped_misfire(self):
+        from types import SimpleNamespace
+
+        from apscheduler.events import EVENT_JOB_MISSED
+
+        evento = SimpleNamespace(
+            code=EVENT_JOB_MISSED,
+            scheduled_run_time=datetime(2026, 8, 2, 15, 7, tzinfo=ROMA),
+        )
+        stato, nota = _riga_per_evento(evento)
+        assert stato == "skipped_misfire"
+        assert "15:07" in nota
+
+    async def test_la_riga_di_salto_arriva_nel_database(self, engine, session):
+        """Esercita anche il CHECK sul nuovo status: se la migrazione del
+        vincolo manca, questo test esplode con IntegrityError."""
+        fabbrica = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+        await _scrivi_riga_di_salto(fabbrica, "skipped_overlap", "nota di prova")
+
+        riga = (
+            (await session.execute(select(Run).where(Run.status == "skipped_overlap")))
+            .scalars()
+            .one()
+        )
+        assert riga.kind == "hourly"
+        assert riga.notes == "nota di prova"
+
+
+class TestCicliPersi:
+    """`segna_cicli_persi`: con il jobstore in memoria APScheduler non sa nulla
+    dei fire persi a processo spento — il buco si ricostruisce all'avvio."""
+
+    async def test_senza_storia_non_scrive_nulla(self, session):
+        assert await segna_cicli_persi(session, get_settings()) == 0
+
+    async def test_le_ore_di_fermo_diventano_una_riga(self, session):
+        base = datetime.now(ROMA).replace(hour=14, minute=7, second=30, microsecond=0)
+        session.add(Run(status="ok", kind="hourly", started_at=base))
+        await session.commit()
+
+        persi = await segna_cicli_persi(
+            session, get_settings(), adesso=base.replace(hour=18, minute=44)
+        )
+
+        assert persi == 4, "15:07, 16:07, 17:07 e 18:07"
+        riga = (
+            (await session.execute(select(Run).where(Run.status == "skipped_offline")))
+            .scalars()
+            .one()
+        )
+        assert "servizio fermo" in (riga.notes or "")
+        assert "4 cicli" in (riga.notes or "")
+        assert "15:07" in (riga.notes or "")
+        assert "18:07" in (riga.notes or "")
+
+    async def test_un_riavvio_rapido_non_scrive_nulla(self, session):
+        """Un deploy non e' un fermo: senza minuti 7 attraversati, nessuna riga."""
+        base = datetime.now(ROMA).replace(hour=18, minute=10, second=0, microsecond=0)
+        session.add(Run(status="ok", kind="hourly", started_at=base))
+        await session.commit()
+
+        persi = await segna_cicli_persi(session, get_settings(), adesso=base.replace(minute=44))
+
+        assert persi == 0
+        righe = (
+            await session.execute(
+                select(func.count()).select_from(Run).where(Run.status == "skipped_offline")
+            )
+        ).scalar_one()
+        assert righe == 0
+
+    async def test_anche_un_fire_mancato_da_pochi_minuti_e_perso(self, session):
+        """Riavvio alle 18:12 dopo un fermo iniziato alle 18:05: il fire delle
+        18:07 va contato perso ANCHE SE la grazia di misfire non e' scaduta.
+
+        Con il jobstore in memoria non esiste nessun recupero: al riavvio il
+        job rinasce vuoto e il prossimo fire e' solo futuro (19:07). La prima
+        versione di questa funzione escludeva la finestra di grazia confidando
+        in `coalesce`, e ogni riavvio nei 10 minuti dopo un minuto 7 perdeva
+        quell'ora per sempre, senza riga.
+        """
+        base = datetime.now(ROMA).replace(hour=17, minute=7, second=30, microsecond=0)
+        session.add(Run(status="ok", kind="hourly", started_at=base))
+        await session.commit()
+
+        persi = await segna_cicli_persi(
+            session, get_settings(), adesso=base.replace(hour=18, minute=12)
+        )
+
+        assert persi == 1
+        riga = (
+            (await session.execute(select(Run).where(Run.status == "skipped_offline")))
+            .scalars()
+            .one()
+        )
+        assert "18:07" in (riga.notes or "")
+
+    async def test_un_fire_ancora_futuro_non_si_conta(self, session):
+        """Alle 18:06 il fire delle 18:07 deve ancora avvenire: lo eseguira'
+        lo scheduler che parte subito dopo questa funzione, e contarlo qui
+        produrrebbe una riga doppia."""
+        base = datetime.now(ROMA).replace(hour=17, minute=7, second=30, microsecond=0)
+        session.add(Run(status="ok", kind="hourly", started_at=base))
+        await session.commit()
+
+        persi = await segna_cicli_persi(
+            session, get_settings(), adesso=base.replace(hour=18, minute=6)
+        )
+
+        assert persi == 0
+
+    async def test_un_solo_ciclo_perso_si_nomina_per_esteso(self, session):
+        base = datetime.now(ROMA).replace(hour=16, minute=20, second=0, microsecond=0)
+        session.add(Run(status="ok", kind="hourly", started_at=base))
+        await session.commit()
+
+        persi = await segna_cicli_persi(
+            session, get_settings(), adesso=base.replace(hour=18, minute=0)
+        )
+
+        assert persi == 1
+        riga = (
+            (await session.execute(select(Run).where(Run.status == "skipped_offline")))
+            .scalars()
+            .one()
+        )
+        assert "17:07" in (riga.notes or "")

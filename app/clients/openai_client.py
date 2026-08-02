@@ -32,6 +32,7 @@ from app.clients.base import (
     RicercaNonEseguitaError,
     RisultatoProbe,
     richiesta_con_backoff,
+    timeout_probe,
 )
 from app.core.config import Settings
 
@@ -56,7 +57,7 @@ class OpenAIAdapter:
         # `transport` serve solo ai test, per iniettare risposte finte.
         self._client = httpx.AsyncClient(
             base_url=settings.openai_base_url,
-            timeout=settings.probe_timeout_seconds,
+            timeout=timeout_probe(settings.probe_timeout_seconds),
             headers={
                 "Authorization": f"Bearer {settings.openai_api_key}",
                 "Content-Type": "application/json",

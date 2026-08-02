@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -100,22 +101,36 @@ async def _esegui_uno(
     compito: _Compito,
     semaforo: asyncio.Semaphore,
     settings: Settings,
-) -> tuple[_Compito, RisultatoProbe | None, str, str | None]:
-    """Un probe. Non solleva: l'errore diventa lo stato del probe."""
+) -> tuple[_Compito, RisultatoProbe | None, str, str | None, int]:
+    """Un probe. Non solleva: l'errore diventa lo stato del probe.
+
+    L'ultimo elemento della tupla e' la latenza in millisecondi, misurata anche
+    sui fallimenti: un rifiuto immediato e 130 secondi bruciati in timeout sono
+    guasti diversi, e senza il tempo non si distinguono dai dati.
+    """
     async with semaforo:
+        avvio = time.monotonic()
         try:
             risultato = await asyncio.wait_for(
                 compito.adapter.probe(compito.query.text, compito.mode),
-                timeout=settings.probe_timeout_seconds + 10,
+                # Il doppio del timeout di lettura, piu' un margine per il
+                # backoff: con `timeout + 10` il ritento interno su un timeout
+                # era irraggiungibile — il primo tentativo poteva consumare da
+                # solo tutto il budget e la politica di retry esisteva solo
+                # sulla carta.
+                timeout=settings.probe_timeout_seconds * 2 + 30,
             )
-            return compito, risultato, "ok", None
+            return compito, risultato, "ok", None, risultato.latency_ms
         except TimeoutError:
-            return compito, None, "timeout", "timeout complessivo del probe"
+            latenza = int((time.monotonic() - avvio) * 1000)
+            return compito, None, "timeout", "timeout complessivo del probe", latenza
         except ProviderError as exc:
-            return compito, None, exc.stato, str(exc)[:1000]
+            latenza = int((time.monotonic() - avvio) * 1000)
+            return compito, None, exc.stato, str(exc)[:1000], latenza
         except Exception as exc:  # pragma: no cover — difesa
             log.exception("errore inatteso nel probe", provider=compito.adapter.name)
-            return compito, None, "error", f"{type(exc).__name__}: {exc}"[:1000]
+            latenza = int((time.monotonic() - avvio) * 1000)
+            return compito, None, "error", f"{type(exc).__name__}: {exc}"[:1000], latenza
 
 
 async def esegui_ciclo(
@@ -129,27 +144,39 @@ async def esegui_ciclo(
 ) -> EsitoCiclo:
     settings = settings or get_settings()
 
-    stato_budget = await budget.stato(session, settings)
-    if stato_budget.superato:
-        motivo = stato_budget.motivo() or "budget esaurito"
-        run = Run(status="skipped_budget", kind=kind, notes=motivo)
-        session.add(run)
-        await session.commit()
-        log.warning("ciclo saltato per budget", motivo=motivo, run_id=run.id)
-        return EsitoCiclo(run_id=run.id, status="skipped_budget", note=motivo)
-
-    adapters = costruisci_adapter(settings, solo=provider)
-    if not adapters:
-        raise ValueError(
-            "Nessun provider configurato: metti almeno una chiave API nel .env "
-            "(OPENAI_API_KEY, PERPLEXITY_API_KEY, ANTHROPIC_API_KEY)."
-        )
-
+    # La riga del run si crea PRIMA di qualunque operazione che possa fallire
+    # (controllo del budget, costruzione degli adapter, generazione del lotto):
+    # cosi' ogni eccezione, ovunque nasca, trova una riga da chiudere e l'ora
+    # non sparisce mai senza spiegazione.
+    #
+    # E si COMMITTA subito, non solo flush: la riga «in corso» deve essere
+    # visibile da fuori mentre il ciclo gira. Con il solo flush restava dentro
+    # la transazione: un ciclo bloccato non compariva da nessuna parte e un
+    # riavvio faceva rollback — l'ora svaniva senza traccia, che in produzione
+    # e' stato scambiato per uno scheduler che non rispetta gli orari.
     run = Run(status="running", kind=kind)
     session.add(run)
-    await session.flush()
+    await session.commit()
+    run_id = run.id
 
+    adapters: list[ProviderAdapter] = []
     try:
+        stato_budget = await budget.stato(session, settings)
+        if stato_budget.superato:
+            motivo = stato_budget.motivo() or "budget esaurito"
+            run.status = "skipped_budget"
+            run.finished_at = datetime.now(UTC)
+            run.notes = motivo
+            await session.commit()
+            log.warning("ciclo saltato per budget", motivo=motivo, run_id=run.id)
+            return EsitoCiclo(run_id=run.id, status="skipped_budget", note=motivo)
+
+        adapters = costruisci_adapter(settings, solo=provider)
+        if not adapters:
+            raise ValueError(
+                "Nessun provider configurato: metti almeno una chiave API nel .env "
+                "(OPENAI_API_KEY, PERPLEXITY_API_KEY, ANTHROPIC_API_KEY)."
+            )
         esito_generazione = await genera_lotto(session, quante, settings=settings)
         queries = esito_generazione.query
         if not queries:
@@ -163,7 +190,9 @@ async def esegui_ciclo(
         compiti = _pianifica(queries, adapters, slug, settings, campionatore)
 
         run.planned = len(compiti)
-        await session.flush()
+        # Anche questo si committa: mentre il ciclo gira la dashboard deve
+        # poter mostrare «in corso, 0/28», non una riga vuota.
+        await session.commit()
 
         # Un semaforo PER PROVIDER: il limite di concorrenza e' una proprieta'
         # del provider, non del lotto.
@@ -175,14 +204,19 @@ async def esegui_ciclo(
         )
 
         esito = EsitoCiclo(run_id=run.id, status="running", planned=len(compiti))
-        for compito, risultato, stato_probe, errore in risultati:
-            costo = await _registra(session, run, compito, risultato, stato_probe, errore, settings)
+        guasti: dict[str, dict[str, int]] = {}
+        for compito, risultato, stato_probe, errore, latenza_ms in risultati:
+            costo = await _registra(
+                session, run, compito, risultato, stato_probe, errore, latenza_ms, settings
+            )
             esito.cost_eur += costo
             esito.per_stato[stato_probe] = esito.per_stato.get(stato_probe, 0) + 1
             if stato_probe == "ok":
                 esito.completed += 1
             else:
                 esito.failed += 1
+                per_provider = guasti.setdefault(compito.adapter.name, {})
+                per_provider[stato_probe] = per_provider.get(stato_probe, 0) + 1
 
         await _aggiorna_rotazione(session, queries)
 
@@ -197,6 +231,14 @@ async def esegui_ciclo(
         else:
             run.status = "ok"
         esito.status = run.status
+        if guasti:
+            # «parziale · 1 falliti» da solo non dice niente: chi e' fallito e
+            # perche' devono stare sulla riga del ciclo, non solo nei log.
+            run.notes = "falliti: " + "; ".join(
+                f"{provider} " + ", ".join(f"{n} {stato}" for stato, n in sorted(stati.items()))
+                for provider, stati in sorted(guasti.items())
+            )
+            esito.note = run.notes
 
         await session.commit()
         log.info(
@@ -211,14 +253,31 @@ async def esegui_ciclo(
         )
         return esito
 
-    except Exception:
-        run.status = "failed"
-        run.finished_at = datetime.now(UTC)
-        run.notes = "eccezione durante il ciclo"
+    except Exception as exc:
+        # La sessione puo' essere in uno stato abortito (per esempio dopo un
+        # errore del database): prima il rollback, poi un UPDATE mirato sulla
+        # riga gia' committata. Toccare l'oggetto `run` dopo il rollback
+        # rischierebbe un refresh implicito su una connessione compromessa.
+        await session.rollback()
+        await session.execute(
+            update(Run)
+            .where(Run.id == run_id, Run.status == "running")
+            .values(
+                status="failed",
+                finished_at=func.now(),
+                notes=f"eccezione durante il ciclo: {type(exc).__name__}: {exc}"[:500],
+            )
+        )
         await session.commit()
         raise
     finally:
-        await chiudi_adapter(adapters)
+        # Il finally gira anche mentre una CancelledError (il tetto di durata
+        # dello scheduler) sta risalendo: un errore nella chiusura di un client
+        # HTTP non deve sostituirla ne' oscurare l'eccezione originale.
+        try:
+            await chiudi_adapter(adapters)
+        except Exception:
+            log.exception("errore nella chiusura degli adapter")
 
 
 async def _registra(
@@ -228,6 +287,7 @@ async def _registra(
     risultato: RisultatoProbe | None,
     stato_probe: str,
     errore: str | None,
+    latenza_ms: int,
     settings: Settings,
 ) -> Decimal:
     """Scrive il probe e le sue citazioni. Restituisce il costo in EUR."""
@@ -244,6 +304,7 @@ async def _registra(
                 mode=compito.mode,
                 status=stato_probe,
                 error=errore,
+                latency_ms=latenza_ms,
             )
         )
         return Decimal("0")

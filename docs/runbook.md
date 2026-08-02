@@ -323,6 +323,32 @@ spesa e probe. Per lo stesso motivo `--workers 1` non è negoziabile.
 
 ---
 
+## Manca un'ora in «Ultimi cicli»
+
+Non deve succedere: **ogni ora lascia una riga**, qualunque cosa vada storta.
+Le righe possibili, oltre a `riuscito`/`parziale`/`fallito`:
+
+| Stato | Significato | Rimedio |
+|---|---|---|
+| `saltato per budget` | Query del giorno esaurite, o tetto di spesa raggiunto | Alza `DAILY_QUERY_BUDGET` o i tetti di spesa |
+| `saltato: ciclo precedente in corso` | Il ciclo prima era ancora in esecuzione al minuto 7 | Guarda la durata del ciclo precedente: se sfiora i 45 minuti, qualcosa è lento |
+| `saltato: fuori tempo massimo` | Il processo era bloccato e l'esecuzione è arrivata oltre 10 minuti di ritardo | Cerca nel log cosa teneva occupato il processo |
+| `servizio fermo` | Riga scritta al riavvio: conta ed elenca le ore in cui il processo era spento | Se il fermo non è un tuo deploy, guarda `docker compose ps` e i riavvii |
+| `fallito` con «interrotto d'ufficio dopo 45 minuti» | Il ciclo era appeso (rete o DB bloccati) ed è stato interrotto per non far saltare le ore successive | Cerca nel log l'ultima operazione prima dell'interruzione |
+
+Un ciclo `parziale` porta nelle note il dettaglio dei guasti per provider
+(`falliti: anthropic 1 timeout; ...`): con 1–2 falliti su 30 e provider sempre
+diversi è fisiologia delle API; lo stesso provider ogni ora è un problema suo
+(chiave, quota) — apri «Esplora probe» filtrando per esito.
+
+Se un'ora è **davvero assente** — nessuna riga, nemmeno di salto — i casi
+rimasti sono due: il servizio è fermo *adesso* (la riga «servizio fermo»
+arriverà al riavvio), oppure il database di monitoraggio era irraggiungibile
+in quell'ora, e allora nel log c'è `impossibile scrivere la riga del ciclo
+fallito`.
+
+---
+
 ## Le migrazioni
 
 L'entrypoint del container esegue `alembic upgrade head` prima di avviare il

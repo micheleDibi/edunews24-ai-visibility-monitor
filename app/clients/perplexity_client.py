@@ -42,6 +42,7 @@ from app.clients.base import (
     ProviderError,
     RisultatoProbe,
     richiesta_con_backoff,
+    timeout_probe,
 )
 from app.core.config import Settings
 
@@ -66,7 +67,7 @@ class PerplexityAdapter:
         self._settings = settings
         self._client = httpx.AsyncClient(
             base_url=BASE_URL,
-            timeout=settings.probe_timeout_seconds,
+            timeout=timeout_probe(settings.probe_timeout_seconds),
             headers={
                 "Authorization": f"Bearer {settings.perplexity_api_key}",
                 "Content-Type": "application/json",

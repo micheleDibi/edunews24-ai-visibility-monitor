@@ -16,7 +16,13 @@ import httpx
 import pytest
 
 from app.clients.anthropic_client import AnthropicAdapter
-from app.clients.base import RicercaNonEseguitaError
+from app.clients.base import (
+    ProviderError,
+    ProviderTimeoutError,
+    RateLimitError,
+    RicercaNonEseguitaError,
+    richiesta_con_backoff,
+)
 from app.clients.gemini_client import GeminiAdapter, GeminiDisabilitatoError
 from app.clients.openai_client import OpenAIAdapter
 from app.clients.perplexity_client import PerplexityAdapter
@@ -488,3 +494,109 @@ class TestGemini:
         assert r.search_calls == 2
         assert len(r.citazioni) == 1
         assert r.citazioni[0].url == "https://edunews24.it/scuola/concorso-docenti-2026"
+
+
+# ---------------------------------------------------------------------------
+# Backoff — la politica di retry comune a tutti i provider
+# ---------------------------------------------------------------------------
+
+
+class TestBackoff:
+    """`richiesta_con_backoff` e' l'unico punto di retry del sistema: un buco
+    qui e' un probe fallito a ogni ciclo, per tutti i provider insieme."""
+
+    @staticmethod
+    def _client(gestore) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            transport=httpx.MockTransport(gestore), base_url="https://api.test"
+        )
+
+    async def test_il_529_di_anthropic_viene_ritentato(self):
+        """`overloaded_error` e' transitorio per definizione: al primo colpo
+        non si molla. In produzione era il principale indiziato per il probe
+        fallito che compariva quasi a ogni ciclo."""
+        chiamate: list[int] = []
+
+        def gestore(richiesta: httpx.Request) -> httpx.Response:
+            chiamate.append(1)
+            if len(chiamate) < 2:
+                return httpx.Response(529, json={"error": {"type": "overloaded_error"}})
+            return httpx.Response(200, json={"ok": True})
+
+        async with self._client(gestore) as client:
+            risposta = await richiesta_con_backoff(
+                client, provider="anthropic", base=0.0, url="/v1/messages", json={}
+            )
+
+        assert risposta.status_code == 200
+        assert len(chiamate) == 2
+
+    async def test_un_blip_di_rete_viene_ritentato(self):
+        """ConnectError e ReadError sono i classici guasti da un colpo solo:
+        prima fallivano il probe immediatamente, senza nemmeno un ritento."""
+        chiamate: list[int] = []
+
+        def gestore(richiesta: httpx.Request) -> httpx.Response:
+            chiamate.append(1)
+            if len(chiamate) < 2:
+                raise httpx.ConnectError("connessione azzerata dal peer")
+            return httpx.Response(200, json={"ok": True})
+
+        async with self._client(gestore) as client:
+            risposta = await richiesta_con_backoff(
+                client, provider="openai", base=0.0, url="/v1/responses", json={}
+            )
+
+        assert risposta.status_code == 200
+        assert len(chiamate) == 2
+
+    async def test_a_ritenti_esauriti_il_corpo_della_risposta_sopravvive(self):
+        """Un «HTTP 503» muto in `probes.error` non dice se era un overload o
+        una manutenzione: il messaggio del provider deve arrivare fino in
+        fondo."""
+
+        def gestore(richiesta: httpx.Request) -> httpx.Response:
+            return httpx.Response(503, text="manutenzione programmata fino alle 12")
+
+        async with self._client(gestore) as client:
+            with pytest.raises(ProviderError, match="manutenzione programmata"):
+                await richiesta_con_backoff(
+                    client, provider="perplexity", tentativi=2, base=0.0, url="/x", json={}
+                )
+
+    async def test_il_rate_limit_si_riconosce_dallo_status_non_dal_testo(self):
+        """Un corpo che contiene «429» per altri motivi non deve travestire un
+        503 da rate limit: la classificazione guarda lo status code."""
+
+        def gestore_503(richiesta: httpx.Request) -> httpx.Response:
+            return httpx.Response(503, text="errore interno n. 429 del gateway")
+
+        async with self._client(gestore_503) as client:
+            with pytest.raises(ProviderError) as errore:
+                await richiesta_con_backoff(
+                    client, provider="openai", tentativi=2, base=0.0, url="/x", json={}
+                )
+        assert not isinstance(errore.value, RateLimitError)
+
+        def gestore_429(richiesta: httpx.Request) -> httpx.Response:
+            return httpx.Response(429, text="too many requests")
+
+        async with self._client(gestore_429) as client:
+            with pytest.raises(RateLimitError):
+                await richiesta_con_backoff(
+                    client, provider="openai", tentativi=2, base=0.0, url="/x", json={}
+                )
+
+    async def test_il_timeout_resta_un_timeout(self):
+        """ReadTimeout e' sottoclasse sia di TimeoutException sia di
+        TransportError: deve continuare a produrre `ProviderTimeoutError`,
+        cioe' lo stato `timeout` sul probe, non un generico errore di rete."""
+
+        def gestore(richiesta: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("nessuna risposta")
+
+        async with self._client(gestore) as client:
+            with pytest.raises(ProviderTimeoutError):
+                await richiesta_con_backoff(
+                    client, provider="gemini", tentativi=2, base=0.0, url="/x", json={}
+                )
