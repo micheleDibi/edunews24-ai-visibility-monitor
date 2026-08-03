@@ -1,6 +1,11 @@
-/** Componenti di base: card, stati vuoti, errori, scheletri, distintivi. */
+/** Componenti di base: card, stati vuoti, errori, scheletri, distintivi.
+ *
+ *  Vocabolario Nocturne: superfici piene senza bordo, un solo accento usato
+ *  come contorno e mai come campitura, stati resi con le rampe tonali (niente
+ *  rosso/verde semantici: e' una tavolozza mono-accento per scelta).
+ */
 
-import { AlertTriangle, Info, Loader2 } from "lucide-react";
+import { CircleNotch, Info, Warning } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 
 import {
@@ -21,11 +26,7 @@ export function Card({
   titolo: string;
   descrizione?: string;
   azioni?: ReactNode;
-  /**
-   * Voci di glossario delle metriche mostrate in questa card. Il pulsante
-   * finisce nell'intestazione, il pannello in cima al corpo: aprendolo la
-   * spiegazione sta SOPRA i numeri che spiega, non davanti.
-   */
+  /** Voci di glossario delle metriche mostrate in questa card (in dismissione). */
   spiega?: readonly ChiaveGlossario[];
   children: ReactNode;
   id?: string;
@@ -34,17 +35,17 @@ export function Card({
   return (
     <section
       id={id}
-      className="rounded-[var(--radius-card)] border border-grafite-tenue bg-foglio shadow-card"
+      className="rounded-md bg-superficie p-6"
       aria-labelledby={id ? `${id}-titolo` : undefined}
       onKeyDown={spiega ? chiudiConEsc : undefined}
     >
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-grafite-tenue px-4 py-3">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 id={id ? `${id}-titolo` : undefined} className="display text-lg font-semibold">
+          <h2 id={id ? `${id}-titolo` : undefined} className="display text-md">
             {titolo}
           </h2>
           {descrizione && (
-            <p className="mt-0.5 max-w-prose text-sm text-grafite">{descrizione}</p>
+            <p className="mt-1 max-w-prose text-sm text-testo-55">{descrizione}</p>
           )}
         </div>
         {(azioni || spiega) && (
@@ -61,7 +62,7 @@ export function Card({
           </div>
         )}
       </header>
-      <div className="p-4">
+      <div className="mt-4">
         {spiega && aperto && (
           <PannelloGlossario id={idPannello} voci={spiega} className="mb-4" />
         )}
@@ -78,17 +79,19 @@ export function Card({
  */
 export function StatoVuoto({ titolo, cosaFare }: { titolo: string; cosaFare: string }) {
   return (
-    <div className="flex items-start gap-3 rounded-[var(--radius-controllo)] bg-gesso px-4 py-5">
-      <Info className="mt-0.5 shrink-0 text-grafite" size={20} strokeWidth={1.5} aria-hidden />
+    <div className="flex items-start gap-3 rounded-md bg-neutro-900 px-4 py-5">
+      <Info className="mt-0.5 shrink-0 text-testo-45" size={20} aria-hidden />
       <div>
         <p className="font-medium">{titolo}</p>
-        <p className="mt-1 text-sm text-grafite">{cosaFare}</p>
+        <p className="mt-1 text-sm text-testo-55">{cosaFare}</p>
       </div>
     </div>
   );
 }
 
-/** Errore con il percorso di ripristino, non solo il messaggio. */
+/** Errore con il percorso di ripristino, non solo il messaggio.
+ *  Mono-accento anche qui: l'errore e' un avviso in tinta accento, il
+ *  contesto (icona, testo, ruolo alert) dice che e' un problema. */
 export function StatoErrore({
   errore,
   riprova,
@@ -100,18 +103,13 @@ export function StatoErrore({
   return (
     <div
       role="alert"
-      className="flex flex-wrap items-start gap-3 rounded-[var(--radius-controllo)] bg-sigillo-tenue px-4 py-4"
+      className="flex flex-wrap items-start gap-3 rounded-md bg-accento-900 px-4 py-4"
     >
-      <AlertTriangle
-        className="mt-0.5 shrink-0 text-sigillo"
-        size={20}
-        strokeWidth={1.5}
-        aria-hidden
-      />
+      <Warning className="mt-0.5 shrink-0 text-accento-300" size={20} aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="font-medium text-sigillo">Non è stato possibile caricare i dati.</p>
-        <p className="mt-1 break-words text-sm text-grafite">{messaggio}</p>
-        <p className="mt-1 text-sm text-grafite">
+        <p className="font-medium text-accento-200">Non è stato possibile caricare i dati.</p>
+        <p className="mt-1 break-words text-sm text-testo-55">{messaggio}</p>
+        <p className="mt-1 text-sm text-testo-55">
           Se persiste, controlla che il servizio sia in esecuzione e guarda i log del container.
         </p>
       </div>
@@ -119,7 +117,7 @@ export function StatoErrore({
         <button
           type="button"
           onClick={riprova}
-          className="rounded-[var(--radius-controllo)] border border-sigillo px-3 py-1.5 text-sm font-medium text-sigillo transition-colors hover:bg-sigillo hover:text-foglio"
+          className="cursor-pointer rounded-md border border-accento px-3 py-1.5 text-sm font-medium text-accento transition-colors hover:bg-accento/12 active:bg-accento/20"
         >
           Riprova
         </button>
@@ -136,7 +134,7 @@ export function Scheletro({ righe = 3 }: { righe?: number }) {
       {Array.from({ length: righe }).map((_, i) => (
         <div
           key={i}
-          className="h-6 animate-pulse rounded-[var(--radius-controllo)] bg-grafite-tenue"
+          className="h-6 animate-pulse rounded-sm bg-neutro-800"
           style={{ width: `${100 - i * 12}%` }}
         />
       ))}
@@ -144,6 +142,14 @@ export function Scheletro({ righe = 3 }: { righe?: number }) {
   );
 }
 
+/**
+ * Distintivo (il «tag» Nocturne). Le chiavi di `tinta` sono ancora quelle
+ * della vecchia tavolozza — i chiamanti non cambiano finche' le viste non
+ * vengono migrate — ma gli stili sono gia' il vocabolario nuovo:
+ * pieno neutro per gli esiti normali, pieno accento per il segnale positivo,
+ * pervinca per gli stati "a meta'", contorno smorzato per i salti,
+ * contorno accento per i guasti.
+ */
 export function Distintivo({
   children,
   tinta = "grafite",
@@ -154,22 +160,23 @@ export function Distintivo({
   titolo?: string;
 }) {
   const tinte = {
-    timbro: "bg-timbro-tenue text-timbro",
-    alloro: "bg-alloro-tenue text-alloro",
-    ottone: "bg-ottone-tenue text-ottone",
-    grafite: "bg-grafite-tenue text-lavagna-80",
-    sigillo: "bg-sigillo-tenue text-sigillo",
+    timbro: "bg-accento-800 text-accento-100",
+    alloro: "bg-neutro-800 text-neutro-100",
+    ottone: "bg-pervinca-900 text-pervinca-200",
+    grafite: "border border-divisore text-testo-45",
+    sigillo: "border border-accento-700 text-accento-300",
   } as const;
   return (
     <span
       title={titolo}
-      className={`inline-flex items-center gap-1 rounded-[var(--radius-controllo)] px-1.5 py-0.5 text-xs font-medium ${tinte[tinta]}`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-[6px] px-2.5 py-[3px] text-xs tracking-[0.02em] ${tinte[tinta]}`}
     >
       {children}
     </span>
   );
 }
 
+/** Bottone Nocturne: il primario e' un CONTORNO accento, mai un riempimento. */
 export function Bottone({
   children,
   onClick,
@@ -187,22 +194,23 @@ export function Bottone({
 }) {
   const stili =
     variante === "primario"
-      ? "bg-timbro text-foglio hover:opacity-90"
-      : "border border-grafite-tenue bg-foglio text-lavagna hover:bg-gesso";
+      ? "border-accento text-accento hover:bg-accento/12 active:bg-accento/20"
+      : "border-divisore text-testo hover:bg-testo/7 active:bg-testo/14";
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabilitato || inCorso}
       // 44px di altezza minima: e' un bersaglio tocco, non solo un bottone.
-      className={`inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[var(--radius-controllo)] px-3.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-9 ${stili}`}
+      className={`inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-transparent px-3.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-9 ${stili}`}
     >
-      {inCorso && <Loader2 size={16} className="animate-spin" aria-hidden />}
+      {inCorso && <CircleNotch size={16} className="animate-spin" aria-hidden />}
       {children}
     </button>
   );
 }
 
+/** Selettore del periodo: il controllo segmentato Nocturne. */
 export function SelettorePeriodo({
   giorni,
   onChange,
@@ -211,17 +219,26 @@ export function SelettorePeriodo({
   onChange: (g: number) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <span className="text-grafite">Periodo</span>
-      <select
-        value={giorni}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="min-h-11 cursor-pointer rounded-[var(--radius-controllo)] border border-grafite-tenue bg-foglio px-2 text-sm sm:min-h-9"
-      >
-        <option value={7}>7 giorni</option>
-        <option value={30}>30 giorni</option>
-        <option value={90}>90 giorni</option>
-      </select>
-    </label>
+    <div
+      role="group"
+      aria-label="Periodo di osservazione"
+      className="inline-flex overflow-hidden rounded-md border border-divisore"
+    >
+      {[7, 30, 90].map((g) => (
+        <button
+          key={g}
+          type="button"
+          onClick={() => onChange(g)}
+          aria-pressed={giorni === g}
+          className={`cifre min-h-11 cursor-pointer border-0 bg-transparent px-3 text-sm transition-colors first:rounded-l-md last:rounded-r-md sm:min-h-8 ${
+            giorni === g
+              ? "text-accento shadow-[inset_0_0_0_1px_var(--color-accento)]"
+              : "text-testo-60 hover:bg-testo/7"
+          }`}
+        >
+          {g}g
+        </button>
+      ))}
+    </div>
   );
 }
