@@ -1,79 +1,66 @@
 /**
- * Guida alle metriche — la versione lunga, in fondo alla pagina.
+ * Guida alle metriche — la vista di riferimento.
  *
- * Le spiegazioni per sezione servono a chi ha un dubbio su un numero preciso
- * mentre lo sta guardando. Questa serve al caso opposto: la prima volta che si
- * apre la dashboard, o quando si deve spiegare a qualcun altro cosa misura.
- *
- * Sta in fondo e chiusa perché è l'unica sezione della pagina che non contiene
- * dati: aperta di default spingerebbe in basso tutto quello che invece si
- * guarda ogni giorno.
+ * L'unica vista senza dati: spiega cosa conta ogni numero, cosa entra nei
+ * denominatori e come si legge l'incertezza. Serve la prima volta che si apre
+ * la dashboard, o quando si deve spiegare a qualcun altro cosa misura.
  */
 
-import { BookOpen, ChevronDown } from "lucide-react";
+import { Warning } from "@phosphor-icons/react";
 
-import { Bottone, Card } from "../components/base";
-import { PannelloGlossario } from "../components/Spiegazione";
-import { GRUPPI_GLOSSARIO } from "../lib/glossario";
+import { GLOSSARIO, GRUPPI_GLOSSARIO } from "../lib/glossario";
+import type { VoceGlossario } from "../lib/glossario";
 
 /** Il numero di voci, calcolato dal glossario: aggiungendone una si aggiorna da sé. */
 export const VOCI_TOTALI = GRUPPI_GLOSSARIO.reduce((n, g) => n + g.voci.length, 0);
 
-/**
- * Lo stato dell'apertura vive in `App` e non qui: il collegamento in
- * intestazione deve poter aprire la guida oltre che portarci sopra, altrimenti
- * chi lo segue atterra su una card chiusa e deve cliccare una seconda volta.
- */
-export function Legenda({
-  aperta,
-  onCambia,
-}: {
-  aperta: boolean;
-  onCambia: (v: boolean) => void;
-}) {
-  const setAperta = (f: (v: boolean) => boolean) => onCambia(f(aperta));
-
+export function Legenda() {
   return (
-    <Card
-      id="legenda"
-      titolo="Guida alle metriche"
-      descrizione="Cosa conta ogni numero, cosa entra nei denominatori e come si legge l'incertezza."
-      azioni={
-        <Bottone onClick={() => setAperta((v) => !v)}>
-          {aperta ? (
-            <ChevronDown size={16} aria-hidden />
-          ) : (
-            <BookOpen size={16} aria-hidden />
-          )}
-          {aperta ? "Chiudi la guida" : "Apri la guida"}
-        </Bottone>
-      }
-    >
-      <p className="max-w-prose text-sm text-lavagna-80">
-        Ogni ora il servizio genera domande in italiano a partire dagli articoli pubblicati e le
-        manda ai motori di risposta con la ricerca web attiva, poi conta quante volte
+    <section aria-labelledby="guida-titolo">
+      <p className="text-[11px] uppercase tracking-[0.1em] text-accento">Riferimento</p>
+      <h1 id="guida-titolo" className="display mt-1.5 text-xl">
+        Guida alle metriche
+      </h1>
+      <p className="mt-3 max-w-[65ch] text-sm leading-relaxed text-testo-70">
+        Ogni ora il servizio genera domande in italiano a partire dagli articoli pubblicati e
+        le manda ai motori di risposta con la ricerca web attiva, poi conta quante volte
         edunews24.it compare fra le fonti. Le domande non contengono mai il nome del giornale:
         una domanda che lo nominasse otterrebbe la citazione per costruzione.
       </p>
 
-      {!aperta ? (
-        <p className="mt-2 max-w-prose text-sm text-grafite">
-          La guida spiega le {VOCI_TOTALI} voci che compaiono nella dashboard. Le stesse
-          definizioni sono raggiungibili dal pulsante «Come si legge» in ogni sezione.
-        </p>
-      ) : (
-        <div className="rivela mt-4 space-y-5">
-          {GRUPPI_GLOSSARIO.map((g) => (
-            <div key={g.titolo}>
-              {/* Un gradino sopra i termini del glossario, altrimenti il titolo
-                  del gruppo e la prima voce hanno lo stesso peso e la
-                  gerarchia sparisce. */}
-              <h3 className="display text-md font-semibold">{g.titolo}</h3>
-              <PannelloGlossario voci={g.voci} className="mt-2" />
+      <div className="mt-9 flex flex-col gap-9">
+        {GRUPPI_GLOSSARIO.map((g) => (
+          <div key={g.titolo}>
+            <h2 className="display text-[18px] text-accento-300">{g.titolo}</h2>
+            <div className="righello mt-1.5" />
+            <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-x-10 gap-y-6">
+              {g.voci.map((chiave) => {
+                const voce: VoceGlossario = GLOSSARIO[chiave];
+                return (
+                  <div key={chiave} className="max-w-[60ch]">
+                    <h3 className="text-base font-medium">{voce.termine}</h3>
+                    <p className="mt-1.5 text-sm leading-relaxed text-testo-70">{voce.misura}</p>
+                    {voce.conto && (
+                      <p className="cifre mt-1.5 text-xs text-testo-45">{voce.conto}</p>
+                    )}
+                    {voce.lettura && (
+                      <p className="mt-1.5 text-sm leading-relaxed text-testo-55">
+                        {voce.lettura}
+                      </p>
+                    )}
+                    {voce.attenzione && (
+                      <p className="mt-2 text-xs leading-relaxed text-accento-300">
+                        <Warning size={13} className="mr-1.5 inline align-[-2px]" aria-hidden />
+                        {voce.attenzione}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          ))}
-        </div>
-      )}
-    </Card>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

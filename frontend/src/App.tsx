@@ -144,7 +144,7 @@ export default function App() {
             )}
             {vista === "/esplora" && <EsploraProbe giorni={giorni} />}
             {vista === "/sistema" && <StatoSistema />}
-            {vista === "/guida" && <Legenda aperta onCambia={() => undefined} />}
+            {vista === "/guida" && <Legenda />}
           </div>
 
           <footer className="mt-14">
