@@ -218,7 +218,16 @@ export const api = {
   logout: () => chiama<{ ok: boolean }>("/auth/logout", { method: "POST" }),
   me: () => chiama<{ soggetto: string }>("/me"),
 
-  salute: () => chiama<Salute>("/health"),
+  salute: async (): Promise<Salute> => {
+    // /health risponde 503 quando lo stato e' "degradato", ma il corpo c'e'
+    // comunque ed E' la diagnosi: trattarlo come errore di rete la butterebbe
+    // via proprio quando serve.
+    const risposta = await fetch("/api/health", { credentials: "same-origin" });
+    if (!risposta.ok && risposta.status !== 503) {
+      throw new Error(`richiesta fallita (${risposta.status})`);
+    }
+    return (await risposta.json()) as Salute;
+  },
   costi: () => chiama<StatoCosti>("/costs"),
 
   kpi: (giorni: number, modo: Modo = "retrieval") =>

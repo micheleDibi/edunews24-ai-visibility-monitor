@@ -362,6 +362,65 @@ body {
   animation: vista 200ms ease-out;
 }
 
+/* La tabella Nocturne: intestazioni maiuscolette smorzate e righe separate
+   dal righello che sfuma — dipinto come sfondo della riga, cosi' la
+   dissolvenza attraversa la riga intera e non ogni cella. */
+.tabella {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.tabella th {
+  padding: 8px 12px 10px 0;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-testo-60);
+}
+.tabella td {
+  padding: 14px 12px 14px 0;
+  vertical-align: top;
+}
+.tabella thead tr {
+  background: linear-gradient(
+      to right,
+      transparent,
+      var(--color-divisore) min(48px, 30%),
+      var(--color-divisore) calc(100% - min(48px, 30%)),
+      transparent
+    )
+    no-repeat bottom / 100% 1px;
+}
+.tabella tbody tr {
+  background: linear-gradient(
+      to right,
+      transparent,
+      color-mix(in srgb, var(--color-testo) 8%, transparent) min(48px, 30%),
+      color-mix(in srgb, var(--color-testo) 8%, transparent) calc(100% - min(48px, 30%)),
+      transparent
+    )
+    no-repeat bottom / 100% 1px;
+}
+.tabella tbody tr:hover {
+  /* La tinta di hover si sovrappone al righello, che continua a dipingersi. */
+  background:
+    linear-gradient(
+        color-mix(in srgb, var(--color-testo) 4%, transparent),
+        color-mix(in srgb, var(--color-testo) 4%, transparent)
+      )
+      no-repeat 0 0 / 100% 100%,
+    linear-gradient(
+        to right,
+        transparent,
+        color-mix(in srgb, var(--color-testo) 8%, transparent) min(48px, 30%),
+        color-mix(in srgb, var(--color-testo) 8%, transparent) calc(100% - min(48px, 30%)),
+        transparent
+      )
+      no-repeat bottom / 100% 1px;
+}
+
 /* Ombra di bordo che segnala lo scorrimento orizzontale delle tabelle.
    Valori canonici per fondo scuro; l'override chiaro sta nella media query. */
 .scorrevole {

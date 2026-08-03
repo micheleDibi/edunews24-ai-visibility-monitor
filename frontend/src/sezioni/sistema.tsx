@@ -1,10 +1,11 @@
-/** Sezione 8 — Stato del sistema. */
+/** Vista «Stato del sistema»: cicli, prossime esecuzioni e budget residuo. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Play } from "lucide-react";
+import { Clock, Database, Play, Pulse, Wrench } from "@phosphor-icons/react";
+import type { Icon } from "@phosphor-icons/react";
 import { useState } from "react";
 
-import { Bottone, Card, Distintivo, Scheletro, StatoErrore, StatoVuoto } from "../components/base";
+import { Bottone, Distintivo, Scheletro, StatoErrore, StatoVuoto } from "../components/base";
 import { api } from "../lib/api";
 import { ETICHETTA_STATO, dataOra, euro, intero } from "../lib/format";
 
@@ -15,9 +16,7 @@ export function StatoSistema() {
   const salute = useQuery({ queryKey: ["salute"], queryFn: api.salute, refetchInterval: 60_000 });
   const costi = useQuery({ queryKey: ["costi"], queryFn: api.costi });
   // 25 e non 15: il ciclo e' orario, quindi servono almeno 24 righe perche' la
-  // tabella copra una giornata intera. Con 15 si vedeva una finestra di quindici
-  // ore e le ore fuori da quella finestra sembravano un'interruzione del
-  // servizio — che e' esattamente l'equivoco per cui questa tabella esiste.
+  // tabella copra una giornata intera.
   const run = useQuery({ queryKey: ["run"], queryFn: () => api.run(25) });
 
   const esegui = useMutation({
@@ -36,155 +35,169 @@ export function StatoSistema() {
   const superato = budget?.budget_superato ?? false;
 
   return (
-    <Card
-      id="sistema"
-      titolo="Stato del sistema"
-      descrizione="Cicli eseguiti, prossime esecuzioni e budget residuo."
-      spiega={["ciclo", "probe", "falliti", "costo_stimato", "non_aumenta"]}
-      azioni={
+    <section aria-labelledby="sistema-titolo">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.1em] text-accento">Operazioni</p>
+          <h1 id="sistema-titolo" className="display mt-1.5 text-xl">
+            Stato del sistema
+          </h1>
+          <p className="mt-1.5 max-w-[60ch] text-sm text-testo-55">
+            Cicli, prossime esecuzioni e budget residuo.
+          </p>
+        </div>
         <Bottone
           variante="primario"
           onClick={() => esegui.mutate()}
           inCorso={esegui.isPending}
           disabilitato={superato}
         >
-          <Play size={16} aria-hidden />
+          <Play size={15} aria-hidden />
           Esegui un ciclo
         </Bottone>
-      }
-    >
-      {/* Banner del budget: `sigillo` compare solo qui e sugli errori veri. */}
-      {superato && (
-        <div
-          role="alert"
-          className="mb-4 rounded-[var(--radius-controllo)] bg-sigillo-tenue px-4 py-3"
+      </div>
+
+      {messaggio && (
+        <p
+          aria-live="polite"
+          className="mt-5 rounded-md bg-accento-900 px-4 py-2.5 text-sm text-accento-200"
         >
-          <p className="font-medium text-sigillo">Budget superato: i cicli orari sono sospesi.</p>
-          <p className="mt-1 text-sm text-grafite">
+          {messaggio}
+        </p>
+      )}
+
+      {superato && (
+        <div role="alert" className="mt-5 rounded-md bg-accento-900 px-4 py-3">
+          <p className="font-medium text-accento-200">
+            Budget superato: i cicli orari sono sospesi.
+          </p>
+          <p className="mt-1 text-sm text-testo-55">
             {budget?.motivo}. I cicli riprendono da soli quando la finestra si azzera, oppure
             alza <code className="font-mono">MAX_DAILY_SPEND_EUR</code> nel .env e riavvia.
           </p>
         </div>
       )}
 
-      {messaggio && (
-        <p
-          aria-live="polite"
-          className="mb-4 rounded-[var(--radius-controllo)] bg-timbro-tenue px-3 py-2 text-sm"
-        >
-          {messaggio}
+      {/* ── Le quattro tessere di stato ─────────────────────────────────── */}
+      {salute.error ? (
+        <div className="mt-7">
+          <StatoErrore errore={salute.error} riprova={() => void salute.refetch()} />
+        </div>
+      ) : (
+        <div className="mt-7 grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-6">
+          <Tessera
+            icona={Database}
+            etichetta="Database"
+            valore={salute.isPending ? null : (salute.data?.database ?? "—")}
+            inAccento={false}
+          />
+          <Tessera
+            icona={Pulse}
+            etichetta="Scheduler"
+            valore={salute.isPending ? null : (salute.data?.scheduler ?? "—")}
+            inAccento={salute.data?.scheduler === "attivo"}
+          />
+          <Tessera
+            icona={Clock}
+            etichetta="Prossimo ciclo"
+            valore={
+              salute.isPending
+                ? null
+                : quando(salute.data?.prossime_esecuzioni?.ciclo_orario)
+            }
+            inAccento={false}
+          />
+          <Tessera
+            icona={Wrench}
+            etichetta="Manutenzione"
+            valore={
+              salute.isPending
+                ? null
+                : quando(salute.data?.prossime_esecuzioni?.manutenzione_notturna)
+            }
+            inAccento={false}
+          />
+        </div>
+      )}
+      {salute.data && salute.data.scheduler !== "attivo" && (
+        <p className="mt-3 text-sm text-testo-55">
+          Nessun ciclo automatico partirà. Imposta{" "}
+          <code className="font-mono">SCHEDULER_ENABLED=true</code> e riavvia il container.
         </p>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Servizio */}
-        <div>
-          <h3 className="text-sm font-medium">Servizio</h3>
-          {salute.error ? (
-            <StatoErrore errore={salute.error} riprova={() => void salute.refetch()} />
-          ) : salute.isPending ? (
-            <Scheletro righe={2} />
-          ) : (
-            <dl className="mt-2 space-y-1.5 text-sm">
-              <Riga
-                etichetta="Database"
-                valore={<Distintivo tinta={salute.data!.database === "ok" ? "alloro" : "sigillo"}>{salute.data!.database}</Distintivo>}
-              />
-              <Riga
-                etichetta="Scheduler"
-                valore={
-                  <Distintivo tinta={salute.data!.scheduler === "attivo" ? "alloro" : "ottone"}>
-                    {salute.data!.scheduler}
-                  </Distintivo>
-                }
-              />
-              {salute.data!.scheduler !== "attivo" && (
-                <p className="text-sm text-grafite">
-                  Nessun ciclo automatico partirà. Imposta{" "}
-                  <code className="font-mono">SCHEDULER_ENABLED=true</code> e riavvia il container.
-                </p>
-              )}
-              {Object.entries(salute.data!.prossime_esecuzioni).map(([id, quando]) => (
-                <Riga
-                  key={id}
-                  etichetta={id === "ciclo_orario" ? "Prossimo ciclo" : "Prossima manutenzione"}
-                  valore={
-                    <span className="cifre">{quando ? dataOra(quando) : "non pianificata"}</span>
-                  }
-                />
-              ))}
-            </dl>
-          )}
-        </div>
-
-        {/* Budget */}
-        <div>
-          <h3 className="text-sm font-medium">Budget</h3>
-          {costi.error ? (
+      {/* ── Budget ──────────────────────────────────────────────────────── */}
+      <div className="mt-6 rounded-md bg-superficie p-7">
+        <h2 className="display text-md">Budget</h2>
+        {costi.error ? (
+          <div className="mt-4">
             <StatoErrore errore={costi.error} riprova={() => void costi.refetch()} />
-          ) : costi.isPending ? (
+          </div>
+        ) : costi.isPending ? (
+          <div className="mt-4">
             <Scheletro righe={2} />
-          ) : (
-            <div className="mt-2 space-y-3">
-              <Barra
-                etichetta="Oggi"
-                speso={Number(budget!.giorno_eur)}
-                tetto={Number(budget!.tetto_giorno_eur)}
-              />
-              <Barra
-                etichetta="Questo mese"
-                speso={Number(budget!.mese_eur)}
-                tetto={Number(budget!.tetto_mese_eur)}
-              />
-            </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-8">
+            <Barra
+              etichetta="Oggi"
+              speso={Number(budget!.giorno_eur)}
+              tetto={Number(budget!.tetto_giorno_eur)}
+            />
+            <Barra
+              etichetta="Questo mese"
+              speso={Number(budget!.mese_eur)}
+              tetto={Number(budget!.tetto_mese_eur)}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Cicli */}
-      <div className="mt-5">
-        <h3 className="text-sm font-medium">Ultimi cicli</h3>
-        <p className="mt-0.5 max-w-prose text-xs text-lavagna-60">
-          Il ciclo parte al minuto 7 di ogni ora, tutte le 24, e ogni ora lascia una riga:
-          eseguita, saltata con il motivo, oppure conteggiata in una riga «servizio fermo»
-          scritta al riavvio. Qui le ultime 25, poco più di una giornata: un'ora del tutto
-          assente indica un fermo ancora in corso.
+      {/* ── Ultimi cicli ────────────────────────────────────────────────── */}
+      <div className="mt-6 rounded-md bg-superficie p-7">
+        <h2 className="display text-md">Ultimi cicli</h2>
+        <p className="mt-1 max-w-[65ch] text-sm text-testo-55">
+          Uno all'ora, al minuto 7, tutte le 24: ogni ora lascia una riga, anche quando il
+          ciclo non parte — eseguita, saltata con il motivo, o conteggiata come «servizio
+          fermo» al riavvio. Un'ora del tutto assente indica un fermo ancora in corso.
         </p>
         {run.error ? (
-          <StatoErrore errore={run.error} riprova={() => void run.refetch()} />
+          <div className="mt-4">
+            <StatoErrore errore={run.error} riprova={() => void run.refetch()} />
+          </div>
         ) : run.isPending ? (
-          <div className="mt-2">
+          <div className="mt-4">
             <Scheletro righe={4} />
           </div>
         ) : !run.data?.length ? (
-          <div className="mt-2">
+          <div className="mt-4">
             <StatoVuoto
               titolo="Nessun ciclo ancora eseguito."
               cosaFare="Il cron gira al minuto 7 di ogni ora. Con «Esegui un ciclo» ne parte uno subito."
             />
           </div>
         ) : (
-          <div className="scorrevole -mx-4 mt-2 px-4">
-            <table className="w-full min-w-[34rem] border-collapse text-sm">
+          <div className="scorrevole -mx-4 mt-4 px-4">
+            <table className="tabella min-w-[40rem]">
               <thead>
-                <tr className="border-b border-grafite-tenue text-left">
-                  <th scope="col" className="py-2 pr-3 font-medium">Avvio</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Tipo</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Esito</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Probe</th>
-                  <th scope="col" className="py-2 font-medium">Costo</th>
+                <tr>
+                  <th scope="col">Avvio</th>
+                  <th scope="col">Tipo</th>
+                  <th scope="col">Esito</th>
+                  <th scope="col">Probe</th>
+                  <th scope="col">Costo</th>
                 </tr>
               </thead>
               <tbody>
                 {run.data.map((r) => (
-                  <tr key={r.id} className="border-b border-grafite-tenue align-top">
-                    <td className="cifre whitespace-nowrap py-2.5 pr-3 text-xs">
+                  <tr key={r.id}>
+                    <td className="cifre whitespace-nowrap text-xs text-testo-70">
                       {dataOra(r.started_at)}
                     </td>
-                    <td className="py-2.5 pr-3 text-xs text-grafite">
+                    <td className="text-xs text-testo-55">
                       {r.kind === "hourly" ? "orario" : r.kind === "manual" ? "manuale" : r.kind}
                     </td>
-                    <td className="py-2.5 pr-3">
+                    <td>
                       <Distintivo
                         tinta={
                           r.status === "ok"
@@ -201,18 +214,18 @@ export function StatoSistema() {
                         {ETICHETTA_STATO[r.status] ?? r.status}
                       </Distintivo>
                       {r.notes && (
-                        <span className="mt-0.5 block max-w-xs text-xs text-grafite">
+                        <span className="mt-1 block max-w-xs text-xs text-testo-45">
                           {r.notes}
                         </span>
                       )}
                     </td>
-                    <td className="cifre py-2.5 pr-3 text-xs">
+                    <td className="cifre text-xs">
                       {intero(r.completed)}/{intero(r.planned)}
                       {r.failed > 0 && (
-                        <span className="text-sigillo"> · {intero(r.failed)} falliti</span>
+                        <span className="text-accento-300"> · {intero(r.failed)} falliti</span>
                       )}
                     </td>
-                    <td className="cifre py-2.5 text-xs">{euro(r.costo_eur)}</td>
+                    <td className="cifre text-xs">{euro(r.costo_eur)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -220,32 +233,65 @@ export function StatoSistema() {
           </div>
         )}
       </div>
-    </Card>
+    </section>
   );
 }
 
-function Riga({ etichetta, valore }: { etichetta: string; valore: React.ReactNode }) {
+/** «oggi, 15:07» se e' oggi, altrimenti data e ora complete. */
+function quando(iso: string | null | undefined): string {
+  if (!iso) return "non pianificata";
+  const d = new Date(iso);
+  const oggi = new Date();
+  const ora = d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === oggi.toDateString() ? `oggi, ${ora}` : dataOra(iso);
+}
+
+function Tessera({
+  icona: Icona,
+  etichetta,
+  valore,
+  inAccento,
+}: {
+  icona: Icon;
+  etichetta: string;
+  valore: string | null;
+  inAccento: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <dt className="text-grafite">{etichetta}</dt>
-      <dd>{valore}</dd>
+    <div className="rounded-md bg-superficie p-5">
+      <p className="flex items-center gap-2 text-[11px] uppercase tracking-[0.1em] text-testo-55">
+        <Icona size={14} aria-hidden />
+        {etichetta}
+      </p>
+      {valore === null ? (
+        <div className="mt-2.5">
+          <Scheletro righe={1} />
+        </div>
+      ) : (
+        <p
+          className={`cifre mt-2.5 whitespace-nowrap text-[17px] font-medium ${
+            inAccento ? "text-accento" : "text-testo"
+          }`}
+        >
+          {valore}
+        </p>
+      )}
     </div>
   );
 }
 
 function Barra({ etichetta, speso, tetto }: { etichetta: string; speso: number; tetto: number }) {
   const quota = tetto > 0 ? Math.min(1, speso / tetto) : 0;
-  const allarme = quota >= 0.8;
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="text-grafite">{etichetta}</span>
-        <span className="cifre">
-          {euro(speso)} <span className="text-xs text-grafite">/ {euro(tetto)}</span>
+        <span className="text-testo-55">{etichetta}</span>
+        <span className="cifre whitespace-nowrap">
+          {euro(speso)} <span className="text-xs text-testo-45">/ {euro(tetto)}</span>
         </span>
       </div>
       <div
-        className="mt-1 h-2 w-full overflow-hidden rounded-full bg-grafite-tenue"
+        className="relative mt-2 h-[5px] overflow-hidden rounded-[3px] bg-neutro-900"
         role="progressbar"
         aria-valuenow={Math.round(quota * 100)}
         aria-valuemin={0}
@@ -253,9 +299,7 @@ function Barra({ etichetta, speso, tetto }: { etichetta: string; speso: number; 
         aria-label={`Budget ${etichetta.toLowerCase()}: ${euro(speso)} su ${euro(tetto)}`}
       >
         <div
-          className={`h-full rounded-full transition-[width] duration-200 ${
-            allarme ? "bg-sigillo" : "bg-alloro"
-          }`}
+          className="absolute bottom-0 left-0 top-0 rounded-[3px] bg-accento-600 shadow-bagliore-barra transition-[width] duration-200"
           style={{ width: `${quota * 100}%` }}
         />
       </div>
