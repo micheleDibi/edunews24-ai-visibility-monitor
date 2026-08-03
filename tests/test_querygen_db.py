@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 
 from app.core.config import get_settings
 from app.models import Query, Topic
@@ -280,6 +280,86 @@ class TestRiscrittura:
         esito = await genera_lotto(session, 5, adesso=ADESSO, riscrittore=esplode)
         assert len(esito.query) == 5
         assert all(q.generator == "template" for q in esito.query)
+
+    async def test_una_collisione_con_una_query_di_un_altro_giorno_ripiega_sul_template(
+        self, session, catalogo
+    ):
+        """Regressione dell'IntegrityError in produzione.
+
+        Il modello normalizza domande simili nello stesso identico testo: la
+        riscrittura di oggi puo' coincidere con una query inserita GIORNI fa,
+        il cui hash non e' fra quelli dei template del lotto. Il vecchio
+        ricontrollo guardava solo li', l'INSERT esplodeva sul vincolo unico e
+        l'intero ciclo orario falliva.
+        """
+
+        async def prevedibile(testi: list[str]) -> list[str]:
+            return [f"La gente chiede: {t}" for t in testi]
+
+        # Prima passata solo per scoprire i testi dei template...
+        sonda = await genera_lotto(session, 4, adesso=ADESSO)
+        testi_template = [q.text for q in sonda.query]
+        await session.execute(delete(Query))
+        await session.commit()
+
+        # ...cosi' da pre-inserire la «query di un altro giorno»: esattamente
+        # il testo che la riscrittura produrra' per il primo template.
+        collisione = f"La gente chiede: {testi_template[0]}"
+        session.add(
+            Query(
+                text=collisione,
+                text_hash=calcola_hash(collisione),
+                strategy="category",
+                generator="llm_rewrite",
+                last_run_at=ADESSO - timedelta(days=2),
+            )
+        )
+        await session.commit()
+
+        esito = await genera_lotto(session, 4, adesso=ADESSO, riscrittore=prevedibile)
+
+        assert len(esito.query) == 4, "il lotto non deve perdere pezzi, ne' esplodere"
+        colpita = [q for q in esito.query if q.text == testi_template[0]]
+        assert colpita, "la query collisa deve ripiegare sul suo template"
+        assert colpita[0].generator == "template"
+        # Le altre devono essere state riscritte davvero: se fossero tutte
+        # template, il ripiego sarebbe scattato per il motivo sbagliato.
+        assert any(q.generator == "llm_rewrite" for q in esito.query)
+
+    async def test_un_ciclo_concorrente_non_fa_fallire_il_lotto(self, session, catalogo):
+        """Un ciclo manuale puo' inserire la stessa domanda fra il controllo e
+        l'INSERT: la corsa persa si risolve riusando la riga, non fallendo."""
+
+        inserita_di_nascosto: list[str] = []
+
+        async def concorrente(testi: list[str]) -> list[str]:
+            # Simula l'altro ciclo: inserisce la prima domanda del lotto
+            # mentre il generatore e' a meta' strada (dopo la deduplica,
+            # prima del salvataggio).
+            session.add(
+                Query(
+                    text=testi[0],
+                    text_hash=calcola_hash(testi[0]),
+                    strategy="category",
+                    generator="template",
+                )
+            )
+            await session.flush()
+            inserita_di_nascosto.append(testi[0])
+            return testi  # nessuna riscrittura: l'hash resta quello verificato
+
+        esito = await genera_lotto(session, 4, adesso=ADESSO, riscrittore=concorrente)
+
+        assert inserita_di_nascosto
+        assert len(esito.query) == 4
+        hash_conteso = calcola_hash(inserita_di_nascosto[0])
+        assert sum(1 for q in esito.query if q.text_hash == hash_conteso) == 1
+        totali = (
+            await session.execute(
+                select(func.count()).select_from(Query).where(Query.text_hash == hash_conteso)
+            )
+        ).scalar_one()
+        assert totali == 1, "una sola riga per hash: quella del ciclo piu' veloce"
 
     async def test_riscrittura_disattivata(self, session, catalogo, monkeypatch):
         settings = get_settings().model_copy(update={"query_rewrite_enabled": False})

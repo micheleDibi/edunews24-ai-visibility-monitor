@@ -14,8 +14,17 @@ Ordine dei passaggi, che non e' arbitrario:
 Il punto 3 precede il 4 di proposito: le query verbatim (FAQ della redazione,
 domande di categoria) hanno un hash stabile e vanno riconosciute come "gia'
 viste" prima che una riscrittura le renda irriconoscibili. Il punto 5 esiste
-perche' riscrivere cambia il testo e quindi cambia l'hash: senza, si potrebbe
-inserire un duplicato appena creato.
+perche' riscrivere cambia il testo e quindi cambia l'hash — e il ricontrollo
+va fatto contro TUTTO il database, non solo contro gli hash dei template del
+lotto: il modello normalizza domande simili nello stesso identico testo, e la
+riscrittura di oggi finisce spesso addosso a una query di un giorno passato,
+il cui hash non era fra quelli cercati. Senza questo controllo l'INSERT
+esplodeva sul vincolo unico e l'intero ciclo orario falliva.
+
+Il salvataggio usa comunque `ON CONFLICT DO NOTHING`: un ciclo manuale puo'
+girare in parallelo a quello orario e inserire la stessa domanda fra il
+controllo e l'INSERT. In quel caso la riga dell'altro ciclo si riusa, non si
+fa fallire il lotto.
 """
 
 from __future__ import annotations
@@ -25,6 +34,7 @@ from datetime import UTC, datetime, timedelta
 
 import structlog
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -248,36 +258,63 @@ async def genera_lotto(
         esito.riscrittura = "eseguita" if finali != testi else "eseguita (nessuna modifica)"
 
     # --- salvataggio ------------------------------------------------------
-    nuove: list[Query] = []
-    hash_usati = set(esistenti) | {p.hash_template for p in preparate}
+    # Secondo controllo sul database, stavolta sugli hash dei testi RISCRITTI:
+    # la riscrittura puo' collidere con una query di un giorno passato, il cui
+    # hash non era fra quelli dei template del lotto.
+    hash_riscritti = {calcola_hash(t) for t in finali} - set(esistenti)
+    esistenti_riscritte = await _righe_per_hash(session, list(hash_riscritti))
+    hash_usati = set(esistenti) | set(esistenti_riscritte) | {p.hash_template for p in preparate}
+
+    valori: list[dict[str, object]] = []
+    hash_nuovi: set[str] = set()
 
     for preparata, testo_finale in zip(da_riscrivere, finali, strict=True):
         testo = testo_finale
         h = calcola_hash(testo)
-        if testo != preparata.candidata.text and h in hash_usati:
-            # La riscrittura e' finita addosso a una query gia' esistente: si
-            # torna al template, il cui hash e' gia' stato verificato libero.
+        if testo != preparata.candidata.text and (h in hash_usati or h in hash_nuovi):
+            # La riscrittura e' finita addosso a una query gia' esistente —
+            # nel database o in questo stesso lotto: si torna al template, il
+            # cui hash e' gia' stato verificato libero.
             testo = preparata.candidata.text
             h = preparata.hash_template
-        if h in {q.text_hash for q in nuove}:
+        if h in hash_nuovi:  # pragma: no cover — difesa: i template sono unici
             esito.scarta(MotivoScarto.DUPLICATA)
             continue
+        hash_nuovi.add(h)
 
         c = preparata.candidata
-        nuove.append(
-            Query(
-                text=testo,
-                text_hash=h,
-                topic_id=c.topic_id,
-                category_slug=c.category_slug,
-                strategy=c.strategy,
-                generator="llm_rewrite" if testo != c.text else "template",
-                source_faq_index=c.source_faq_index,
-            )
+        valori.append(
+            {
+                "text": testo,
+                "text_hash": h,
+                "topic_id": c.topic_id,
+                "category_slug": c.category_slug,
+                "strategy": c.strategy,
+                "generator": "llm_rewrite" if testo != c.text else "template",
+                "source_faq_index": c.source_faq_index,
+            }
         )
 
-    session.add_all(nuove)
-    await session.flush()
+    nuove: list[Query] = []
+    if valori:
+        # ON CONFLICT DO NOTHING: se un ciclo concorrente ha inserito la
+        # stessa domanda fra il controllo e l'INSERT, la sua riga si riusa —
+        # un lotto non deve mai fallire per una corsa persa.
+        inserite = await session.scalars(
+            pg_insert(Query)
+            .values(valori)
+            .on_conflict_do_nothing(index_elements=["text_hash"])
+            .returning(Query)
+        )
+        nuove = list(inserite.all())
+        if len(nuove) < len(valori):
+            in_corsa = hash_nuovi - {q.text_hash for q in nuove}
+            recuperate = await _righe_per_hash(session, list(in_corsa))
+            riusate.extend(recuperate.values())
+            log.warning(
+                "query inserite da un ciclo concorrente durante il lotto: riusate",
+                quante=len(recuperate),
+            )
     await session.commit()
 
     esito.query = [*riusate, *nuove]
