@@ -303,7 +303,7 @@ body {
   border-collapse: collapse;
   font-size: var(--text-sm);
 }
-.tabella th {
+.tabella thead th {
   padding: 8px 12px 10px 0;
   text-align: left;
   font-size: 11px;
@@ -312,8 +312,12 @@ body {
   text-transform: uppercase;
   color: var(--color-testo-60);
 }
-.tabella td {
+/* Le intestazioni di RIGA (th scope="row") sono contenuto, non cromo. */
+.tabella td,
+.tabella tbody th {
   padding: 14px 12px 14px 0;
+  text-align: left;
+  font-weight: 400;
   vertical-align: top;
 }
 .tabella thead tr {

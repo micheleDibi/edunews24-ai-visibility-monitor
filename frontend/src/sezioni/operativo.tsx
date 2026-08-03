@@ -163,7 +163,7 @@ function GruppoLacune({
                   </span>
                 )}
                 <span
-                  className={`cifre w-44 shrink-0 text-right text-xs ${
+                  className={`cifre w-52 shrink-0 whitespace-nowrap text-right text-xs ${
                     recuperabile ? "text-accento-300" : "text-testo-45"
                   }`}
                 >

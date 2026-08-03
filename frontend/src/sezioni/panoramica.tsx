@@ -303,7 +303,10 @@ export function Tendenza({ giorni }: { giorni: number }) {
                   minTickGap={24}
                 />
                 <YAxis
-                  domain={[0, 1]}
+                  // L'asse segue i dati (con un margine), non l'intervallo
+                  // teorico 0-100%: tassi a una cifra su scala piena
+                  // diventerebbero una riga schiacciata sul fondo.
+                  domain={[0, (max: number) => Math.min(1, Math.max(0.1, max * 1.3))]}
                   tickFormatter={(v: number) => `${Math.round(v * 100)}%`}
                   tick={{ fontSize: 11, fill: "var(--color-testo-45)" }}
                   stroke="transparent"
