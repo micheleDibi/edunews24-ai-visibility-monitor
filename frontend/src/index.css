@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Inter variabile, self-hosted: un solo file, tutti i pesi 400-700. */
+@import "@fontsource-variable/inter";
 
 /* ===========================================================================
    Token — vedi docs/design.md
@@ -24,9 +26,11 @@
   --color-sigillo-tenue: #f7e4e7;
   --color-ardesia: #3a5670;
 
-  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
-  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* Nocturne: Inter per tutto — la gerarchia e' dimensione e spazio, non
+     famiglia. `display` resta come ALIAS per non toccare i componenti. */
+  --font-display: "Inter Variable", "Inter", system-ui, sans-serif;
+  --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
 
   /* Passo stretto in basso dove vivono i dati densi, ampio in alto. */
   --text-xs: 0.75rem;
