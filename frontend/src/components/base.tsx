@@ -8,36 +8,24 @@
 import { CircleNotch, Info, Warning } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 
-import {
-  BottoneSpiegazione,
-  PannelloGlossario,
-  useSpiegazione,
-} from "./Spiegazione";
-import type { ChiaveGlossario } from "../lib/glossario";
-
 export function Card({
   titolo,
   descrizione,
   azioni,
-  spiega,
   children,
   id,
 }: {
   titolo: string;
   descrizione?: string;
   azioni?: ReactNode;
-  /** Voci di glossario delle metriche mostrate in questa card (in dismissione). */
-  spiega?: readonly ChiaveGlossario[];
   children: ReactNode;
   id?: string;
 }) {
-  const { aperto, alterna, idPannello, bottone, chiudiConEsc } = useSpiegazione();
   return (
     <section
       id={id}
       className="rounded-md bg-superficie p-6"
       aria-labelledby={id ? `${id}-titolo` : undefined}
-      onKeyDown={spiega ? chiudiConEsc : undefined}
     >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
@@ -48,26 +36,11 @@ export function Card({
             <p className="mt-1 max-w-prose text-sm text-testo-55">{descrizione}</p>
           )}
         </div>
-        {(azioni || spiega) && (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {spiega && (
-              <BottoneSpiegazione
-                aperto={aperto}
-                onToggle={alterna}
-                controlla={idPannello}
-                riferimento={bottone}
-              />
-            )}
-            {azioni}
-          </div>
+        {azioni && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">{azioni}</div>
         )}
       </header>
-      <div className="mt-4">
-        {spiega && aperto && (
-          <PannelloGlossario id={idPannello} voci={spiega} className="mb-4" />
-        )}
-        {children}
-      </div>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -143,28 +116,28 @@ export function Scheletro({ righe = 3 }: { righe?: number }) {
 }
 
 /**
- * Distintivo (il «tag» Nocturne). Le chiavi di `tinta` sono ancora quelle
- * della vecchia tavolozza — i chiamanti non cambiano finche' le viste non
- * vengono migrate — ma gli stili sono gia' il vocabolario nuovo:
- * pieno neutro per gli esiti normali, pieno accento per il segnale positivo,
- * pervinca per gli stati "a meta'", contorno smorzato per i salti,
- * contorno accento per i guasti.
+ * Distintivo (il «tag» Nocturne). Tavolozza mono-accento: gli stati non hanno
+ * un rosso o un verde, hanno un posto sulle rampe. `accento` e' il segnale
+ * positivo pieno, `neutro` l'esito normale, `pervinca` gli stati "a meta'"
+ * (parziale, recuperato, senza ricerca), `muto` il contorno smorzato dei
+ * salti, `allarme` il contorno accento dei guasti, `contorno` il contorno
+ * accento pieno dei marcatori positivi («articolo giusto»).
  */
 export function Distintivo({
   children,
-  tinta = "grafite",
+  tinta = "muto",
   titolo,
 }: {
   children: ReactNode;
-  tinta?: "timbro" | "alloro" | "ottone" | "grafite" | "sigillo" | "contorno";
+  tinta?: "accento" | "neutro" | "pervinca" | "muto" | "allarme" | "contorno";
   titolo?: string;
 }) {
   const tinte = {
-    timbro: "bg-accento-800 text-accento-100",
-    alloro: "bg-neutro-800 text-neutro-100",
-    ottone: "bg-pervinca-900 text-pervinca-200",
-    grafite: "border border-divisore text-testo-45",
-    sigillo: "border border-accento-700 text-accento-300",
+    accento: "bg-accento-800 text-accento-100",
+    neutro: "bg-neutro-800 text-neutro-100",
+    pervinca: "bg-pervinca-900 text-pervinca-200",
+    muto: "border border-divisore text-testo-45",
+    allarme: "border border-accento-700 text-accento-300",
     contorno: "border border-accento text-accento",
   } as const;
   return (

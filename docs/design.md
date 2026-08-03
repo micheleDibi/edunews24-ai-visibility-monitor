@@ -1,8 +1,10 @@
-# Piano di design
+# Il design «Nocturne»
 
-> Scritto prima di qualunque componente, come previsto dalla Fase 6. Contiene i
-> token, la scala tipografica, l'elemento firma, e — in fondo — la rilettura
-> critica che scarta le scelte che si farebbero per «una dashboard qualunque».
+> Il linguaggio visivo della dashboard dalla riprogettazione dell'agosto 2026.
+> Fonte di verita': il design system Nocturne del progetto Claude Design
+> «Redesign dashboard Nocturne» (i due file `Dashboard Nocturne*.dc.html` e il
+> DS in `_ds/nocturne-*/styles.css`). Questo documento e' la trascrizione
+> operativa: cosa vale nel codice e perche'.
 
 ---
 
@@ -11,294 +13,117 @@
 Non di analytics. Di **assenza**.
 
 Un giornale locale che compete con le testate grandi non verra' citato spesso:
-il dato dominante di questa dashboard sara' lo zero. E la persona che la apre —
-una sola, l'amministratore — non la apre per compiacersi di un numero, la apre
-per rispondere a una domanda operativa: **su cosa sono invisibile e cosa devo
-scrivere.**
+il dato dominante di questa dashboard e' lo zero. La persona che la apre — una
+sola, l'amministratore — la apre per rispondere a una domanda operativa: **su
+cosa sono invisibile e cosa devo scrivere.** Le due regole che ne discendono
+sopravvivono intatte al cambio di pelle:
 
-Da qui due conseguenze che guidano ogni scelta successiva:
-
-1. **L'incertezza e' parte del dato, non una postilla.** Con 200 query al giorno
-   divise su quattro provider e dodici categorie, molte celle avranno
-   denominatori a una cifra. Una dashboard che stampa «2,3%» su tre casi non
-   informa: mente con precisione. L'intervallo di confidenza deve essere
-   *visibile*, non nascosto in un tooltip.
-2. **La sezione operativa e' «dove sei invisibile».** E' quella che si guarda,
-   e va progettata come uno strumento di lavoro: la piu' usabile, non la piu'
-   decorata.
+1. **L'incertezza e' parte del dato.** Ogni percentuale porta denominatore e
+   intervallo di confidenza al 95%; sotto i 10 probe si mostra un trattino,
+   fra 10 e 30 il valore e' sbiadito. Prima erano bande grafiche, ora sono la
+   riga di conto sotto ogni cifra: la resa cambia, la regola no.
+2. **La sezione operativa e' «Dove sei invisibile».** Ha una vista dedicata,
+   ordinata per costo di rimedio, con il drill-down su chi e' citato al posto
+   nostro.
 
 ---
 
-## 2. I sei colori
+## 2. Il carattere di Nocturne
 
-Nomi propri, italiani, tratti dal mondo della scuola e dei documenti — non da
-una tavolozza di dashboard.
+Un'interfaccia quieta e compatta: fondo blu-grigio quasi neutro, Inter a peso
+medio, raggi morbidi da 8 px, e un solo accento — il blurple `--color-accento`
+— usato **come linea, contorno e bagliore, mai come campitura**. Il contrasto
+viene dalle rampe tonali, non dalla saturazione.
 
-| Nome | Hex | Ruolo |
+- **La firma: i righelli che sfumano.** Le linee di separazione non si fermano
+  di netto: sfumano a trasparente alle estremita' (48 px per lato; `@utility
+  righello` / `righello-v`). Righe di tabella, divisori di sezione, il bordo
+  della sidebar. I contorni dei box e i marchi corti restano solidi.
+- **Bottone primario = contorno accento.** Mai riempito: l'accento che riempie
+  e' fuori dal linguaggio. Gli unici riempimenti d'accento sono i passi scuri
+  delle rampe (tag, tinte di hover).
+- **Bagliori.** Il pallino del brand, l'indicatore dello scheduler, la
+  sottolineatura del KPI e le barre del budget portano un `box-shadow`
+  dell'accento (`--shadow-bagliore*`), piu' intenso sul fondo scuro che su
+  quello chiaro.
+- **Gerarchia = dimensione e spazio.** Un solo font (Inter, self-hosted via
+  fontsource); i titoli non superano il peso 500. Le cifre sono sempre
+  tabulari (`.cifre`).
+
+## 3. I token (frontend/src/index.css)
+
+Dark-first: `@theme` porta la variante scura canonica, la chiara e' un
+override su `:root` dentro `@media (prefers-color-scheme: light)` — mai un
+`@theme` annidato, che Tailwind v4 ignora in silenzio. Regola d'oro: i token
+che contengono `var()` (smorzati, bagliori) si risolvono su `:root`, quindi un
+eventuale futuro toggle manuale dovra' mettere la classe su `<html>`.
+
+| Ruolo | Dark | Light |
 |---|---|---|
-| **lavagna** | `#16211F` | Inchiostro. Testo primario e superfici scure. Un verde-ardesia molto scuro, non nero puro: il nero puro su fondo chiaro affatica, e questo e' uno schermo che si guarda a lungo. |
-| **gesso** | `#F1F2EE` | Fondo pagina. Bianco sporco con cast **verde-grigio**, non giallo. Deliberatamente *non* crema (vedi §7). |
-| **timbro** | `#5E3B96` | **Presenza**: il giornale e' citato. Viola d'inchiostro, il colore dei timbri sui documenti italiani. Serie del provider OpenAI. |
-| **alloro** | `#3F6B4A` | Verde alloro, la corona della laurea. Esiti positivi e serie Perplexity. |
-| **ottone** | `#836320` | Avvisi che non sono errori (costo stimato, dato parziale). Serie Anthropic. |
-| **grafite** | `#6E7673` | **Assenza**: altri domini, testo secondario, tutto cio' che occupa il posto quando il giornale non c'e'. |
+| `--color-fondo` | `#161826` | `#eff1f9` |
+| `--color-superficie` | `#232532` | `#fcfcfe` |
+| `--color-testo` | `#e9e9ed` | `#232532` |
+| `--color-accento` | `#9184d9` | `#796cbf` |
+| `--color-pervinca` | `#a7a1db` | `#7972a9` |
 
-Fuori tavolozza, dichiarato a parte perche' **semantico e mai decorativo**:
+- **Rampe 100–900** per `neutro`, `accento`, `pervinca` (il secondo accento
+  del DS: stessa tinta, meno croma — nome proprio per non confondere le
+  classi). I passi sono relativi al fondo: il passo N chiaro corrisponde al
+  passo 1000−N scuro, coi 900 ritoccati a mano dal design.
+- **Testo smorzato pre-mixato**: `--color-testo-70/60/55/45/40` e
+  `--color-divisore` via `color-mix`, cosi' esistono le utility
+  (`text-testo-55`, `border-divisore`) e i `var()` per Recharts.
+- **Serie del grafico**: `--color-serie-1…4`, contratto separato dalla
+  tavolozza UI, con valori per tema (piu' chiare sul fondo scuro). Consumate
+  solo da `SERIE_PROVIDER` in `lib/format.ts`, insieme ai tratteggi che
+  tengono le serie leggibili in scala di grigi.
+- **Niente rosso/verde.** Tavolozza mono-accento per scelta del design: gli
+  stati vivono sulle rampe. Il vocabolario e' quello del `Distintivo`:
+  `accento` (segnale positivo pieno), `neutro` (esito normale), `pervinca`
+  (stati a meta': parziale, recuperato, senza ricerca), `muto` (contorno
+  smorzato dei salti), `allarme` (contorno accento dei guasti), `contorno`
+  (contorno accento dei marcatori positivi). Gli errori si rendono con
+  `accento-300` + icona Warning + `role="alert"`: e' il contesto a dire che
+  e' un problema, non un colore semantico.
 
-| Nome | Hex | Ruolo |
-|---|---|---|
-| **sigillo** | `#A62A3C` | Solo errori veri e budget superato. Non compare da nessun'altra parte, cosi' quando compare significa qualcosa. |
-| **ardesia** | `#3A5670` | Serie Gemini, solo se abilitato. Normalmente non usato. |
+## 4. Il guscio
 
-### Contrasto verificato
+Sidebar sticky da 236 px con il righello verticale sfumato; sei viste su
+percorsi reali (`/`, `/invisibile`, `/confronti`, `/esplora`, `/sistema`,
+`/guida`) servite dal catch-all della SPA, mini-router in `App.tsx` (history
+API + `popstate`, niente libreria). Al cambio di vista: scroll in cima e focus
+sul contenuto. In sidebar: periodo globale 7/30/90 (controllo segmentato),
+badge con il conteggio delle lacune (da `/api/kpi`), indicatore vivo dello
+scheduler (da `/api/health`), Esci. Sotto i 900 px (`--breakpoint-lato`) la
+sidebar diventa una barra superiore con la nav scorrevole.
 
-Rapporti **calcolati**, non stimati (su `gesso` / su `foglio`):
+Le spiegazioni delle metriche vivono SOLO nella vista «Guida alle metriche»
+(scelta esplicita dell'utente): il glossario resta in `lib/glossario.ts`, i
+pannelli per-card non esistono piu'.
 
-| | chiaro | scuro |
-|---|---|---|
-| `lavagna` | 14.69 / 16.52 | 15.29 / 13.60 |
-| `timbro` | 7.35 / 8.26 | 6.85 / 6.09 |
-| `alloro` | 5.47 / 6.15 | 7.78 / 6.91 |
-| `ottone` | 4.95 / 5.57 | 8.55 / 7.61 |
-| `sigillo` | 6.19 / 6.96 | 6.97 / 6.20 |
-| `grafite` | **4.15** / 4.66 | 6.78 / 6.03 |
+## 5. Le regole che il restyling non puo' toccare
 
-Tutti superano 4.5:1 tranne `grafite`, che sta a 4.15:1 sul tema chiaro: si usa
-**solo** per testo secondario e per riempimenti, mai per testo primario.
+Sono le regole di correttezza del sistema, e ogni futura modifica visiva deve
+lasciarle intatte:
 
-`ottone` era inizialmente `#8A6A1F`, che misurava 4.49:1 — un centesimo sotto la
-soglia. Scurito a `#836320`. E' il tipo di dettaglio che si scopre solo
-calcolando, non guardando.
+1. i probe falliti e quelli senza ricerca **non entrano nei denominatori**;
+2. `retrieval` e `memory` **non si mescolano mai** (la colonna Memoria e'
+   separata da un filetto verticale e dichiarata «metrica diversa»);
+3. ogni tasso viaggia col suo denominatore, **mai una percentuale nuda**;
+4. nel grafico i giorni sotto soglia sono `null` e la linea **si interrompe**
+   (`connectNulls={false}`): un segmento sopra un giorno mai misurato e' un
+   numero inventato;
+5. il delta del KPI mostra la freccia **solo se significativo** (gli
+   intervalli dei due periodi non si sovrappongono);
+6. la banda d'incertezza nel grafico si disegna solo con un provider
+   selezionato: con piu' serie sarebbe illeggibile.
 
-### Il colore non porta mai da solo un significato
+## 6. Accessibilita'
 
-Regola dalla ricerca UX (`color-not-only`, `pattern-texture`), qui non
-negoziabile perche' l'intera dashboard e' un confronto fra serie:
-
-* le **serie dei provider** si distinguono per **tratteggio** oltre che per
-  colore — continuo, tratteggiato, punteggiato, tratto-punto — cosi' restano
-  leggibili in scala di grigi e per un daltonico;
-* le celle della griglia categorie portano **il numero**, non solo l'intensita';
-* «citato / non citato» ha sempre un'etichetta o un'icona, non solo la tinta.
-
----
-
-## 3. Le due famiglie tipografiche
-
-Due ruoli netti, come richiesto.
-
-### Display — **Bricolage Grotesque** (variabile, 400–800)
-Numeri e titoli. E' un grottesco con carattere: proporzioni leggermente
-irregolari, tono editoriale, e cifre che reggono bene a corpo grande. Serve al
-KPI principale, che deve avere il peso visivo maggiore.
-
-### Dati — **IBM Plex Sans** (400/500/600)
-Tabelle, etichette, corpo del testo. Voce neutra che non compete con i numeri, e
-soprattutto **cifre tabulari vere**: in una colonna di percentuali le cifre
-devono incolonnarsi, altrimenti l'occhio non puo' confrontarle.
-
-```css
-font-variant-numeric: tabular-nums;
-```
-Applicato a ogni cella numerica. Non e' un dettaglio: senza, ogni tabella
-"balla" e i confronti verticali diventano faticosi.
-
-### Monospazio — **IBM Plex Mono**
-Solo per il `raw_response` nel dettaglio probe e per gli slug. Stessa famiglia
-di IBM Plex Sans, quindi coerente senza aggiungere una terza voce.
-
-```css
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
-```
-
----
-
-## 4. Scala tipografica
-
-Passo non uniforme: stretto in basso (dove vivono i dati densi, e servono
-gradini fini) e ampio in alto (dove servono salti netti).
-
-| Token | px | Uso |
-|---|---|---|
-| `--testo-xs` | 12 | Denominatori, note sotto un numero, unita' |
-| `--testo-sm` | 13 | Celle di tabella, etichette |
-| `--testo-base` | 15 | Corpo. **Su mobile diventa 16px** per evitare lo zoom automatico di iOS |
-| `--testo-md` | 18 | Titoli di card |
-| `--testo-lg` | 22 | Titoli di sezione |
-| `--testo-xl` | 30 | Numeri secondari dei KPI |
-| `--testo-2xl` | 44 | — |
-| `--testo-cifra` | `clamp(3rem, 10vw, 4.5rem)` | **Il citation rate.** Un solo numero in tutta l'interfaccia ha questo corpo |
-
-Interlinea 1.5 sul corpo, 1.1 sui numeri display (le cifre grandi con interlinea
-larga si slegano).
-
-Spaziatura su multipli di 4px. Densita' da dashboard: padding delle celle 8/12px,
-non 16/24 — lo spazio serve ai dati.
-
----
-
-## 5. L'elemento firma: **la banda d'incertezza**
-
-Ogni tasso in questa interfaccia si disegna cosi':
-
-```
-        27%          ← cifra, Bricolage, tabular
-   ├────●───────┤    ← banda: intervallo di Wilson, in scala
-     18/66           ← numeratore/denominatore, sempre
-```
-
-La banda e' **in scala reale** sull'asse 0–100%: un intervallo largo *sembra*
-largo. Il pallino e' la stima puntuale.
-
-Tre taglie, stesso oggetto:
-
-* **grande** — sotto il KPI principale, larga quanto la card;
-* **compatta** — dentro le celle di tabella e della griglia, 48px, senza cifre;
-* **banda** — nel grafico di tendenza, come area attorno alla linea (il tipo
-  «line with confidence band» che la ricerca sui grafici indica per comunicare
-  incertezza).
-
-E quando il campione non basta:
-
-```
-         —           ← nessuna cifra: non si stampa un numero che non c'e'
-   ├///////////┤     ← banda tratteggiata a tutta larghezza
-      2/3            ← i conteggi si mostrano comunque
-```
-
-**Perche' questo e' l'elemento firma.** Non e' un ornamento cercato a
-posteriori: e' il modello dei dati reso visibile. L'API restituisce
-`ic_basso`/`ic_alto`/`affidabile` su ogni tasso proprio perche' questa misura ha
-un'incertezza che conta, e l'interfaccia la mostra invece di arrotondarla via.
-Nessuna dashboard di analytics lo fa — mostrano tutte un numero nudo e una
-freccia verde. Questa mostra quanto sa e quanto non sa, e si riconosce da
-questo.
-
----
-
-## 5b. La nota a margine: le metriche spiegate dentro l'interfaccia
-
-La banda d'incertezza mostra *quanto* un numero e' incerto. Non dice *cosa*
-conta. E nessuna di queste metriche e' autoevidente: «citation rate 4,2%» non
-dichiara chi sta nel denominatore, non dice che i probe falliti ne sono esclusi,
-non dice che *mention* e *citazione* sono due cose diverse che non si sommano.
-Un numero letto male e' peggio di un numero assente, perche' produce comunque
-una decisione editoriale.
-
-Ogni sezione porta quindi un pulsante **«Come si legge»** che apre una nota a
-margine — filetto verticale `timbro` a sinistra, fondo `gesso` — con le voci di
-glossario delle metriche *di quella sezione*.
-
-```
-│ Citation rate
-│ La quota di risposte in cui edunews24.it compare fra le fonti citate.
-│ Sopra: i probe in cui il dominio e' fra le fonti citate. Sotto: i probe
-│ riusciti con la ricerca web attiva.                        ← `conto`
-│ E' il numero principale. Per un giornale che compete con…  ← `lettura`
-│ ⚠ Non e' una posizione in classifica…                      ← `attenzione`
-```
-
-Quattro decisioni, e il motivo di ciascuna:
-
-1. **Pulsante, non tooltip al passaggio del mouse.** Su un telefono il
-   passaggio del mouse non esiste. Chi apre la dashboard dal telefono ha lo
-   stesso diritto alla definizione di chi la apre dal desktop.
-2. **Si apre nel flusso, sopra il contenuto**, e spinge il resto in basso. Un
-   popover sovrapposto coprirebbe proprio i numeri che sta spiegando.
-3. **Il testo sta in `lib/glossario.ts`, non nei componenti.** Il citation rate
-   compare in cinque sezioni: cinque definizioni scritte a mano prima o poi si
-   contraddicono.
-4. **Il campo `attenzione` esiste come campo.** Per meta' di queste metriche
-   l'errore di lettura tipico e' prevedibile e ha un costo (sommare mention e
-   citazioni, leggere la memoria come se fosse retrieval, credere che una
-   variazione dentro l'incertezza sia un miglioramento). Averlo come campo
-   separato, in `ottone`, impedisce che finisca annegato in un paragrafo.
-
-In fondo alla pagina la stessa sorgente alimenta la **Guida alle metriche**:
-tutte le voci in sei gruppi, chiusa di default perche' e' l'unica sezione senza
-dati, raggiungibile dal pulsante in intestazione e dal piede pagina.
-
-L'ultimo gruppo si intitola **«Come si passa dalla misura al risultato»** e
-contiene una voce sola. Dice due cose insieme: che il volume di interrogazioni
-non sposta il citation rate — interrogare un'API non modifica l'indice di
-retrieval del provider — e quale leva invece lo sposta, cioe' le sezioni
-«Dove sei invisibile» e i «recuperato ma non citato».
-
-Il verso conta. La prima stesura intitolava il gruppo *«Cosa questo strumento
-non fa»* e il sottotitolo in intestazione diceva *«e' una misura: non aumenta le
-citazioni»*: un prodotto che si presenta negando il risultato che l'utente
-vuole. Il vincolo era giusto — chi credesse il contrario alzerebbe la frequenza
-dei cicli e brucerebbe budget per niente — ma va detto come indicazione
-operativa, non come premessa deludente. **Il fine della dashboard e' far salire
-le citazioni**; il chiarimento serve a non farlo tentare dalla parte sbagliata.
-
----
-
-## 6. Le otto sezioni
-
-| # | Sezione | Forma | Stato vuoto dice… |
-|---|---|---|---|
-| 1 | **Header KPI** | Il citation rate a `--testo-cifra` con banda grande. Attorno, tre numeri secondari (mention, target hit, costo del mese) a `--testo-xl`. Il delta compare **solo se `significativo`**: se gli intervalli si sovrappongono non e' un miglioramento, e' rumore | «Nessun probe negli ultimi 30 giorni: il ciclo orario non ha ancora girato» |
-| 2 | **Tendenza** | Linea per provider, tratteggi diversi, banda d'incertezza attorno alla linea attiva. Filtro provider. Asse Y in percentuale con tick allo 0 sempre visibile | «Servono almeno due giorni di dati per una tendenza» |
-| 3 | **Provider** | Tabella affiancata. La colonna **memory mode** e' separata da un filetto verticale e da un'intestazione che dice *«metrica diversa: cosa il modello ricorda, non cosa trova»* | «Nessun provider configurato: aggiungi una chiave API nel .env» |
-| 4 | **Categorie** | Griglia categoria x provider. Ogni cella: numero + banda compatta. Le celle con `tasso: null` mostrano `—` e il denominatore, non un colore chiaro che si confonde con «poco» | «Le categorie compaiono dopo il primo `sync-topics`» |
-| 5 | **Dove sei invisibile** | **La sezione operativa.** Lista, non griglia. Ogni riga: titolo dell'articolo, categoria, quante volte sondato, e un distintivo se `recuperato_mai` (recuperato ma non citato = problema diverso). Clic → dettaglio con le risposte ricevute e **chi e' stato citato al posto tuo** | «Nessun articolo e' stato sondato almeno 10 volte senza mai essere citato. Con pochi dati e' normale» |
-| 6 | **Cosa funziona** | Articoli citati, ordinati per citazioni. Distingue *citato* da *target hit* (il pezzo giusto) | «Ancora nessuna citazione registrata» |
-| 7 | **Esplora probe** | Tabella filtrabile, `overflow-x-auto` su mobile. Riga → pannello con la risposta integrale e le citazioni | «Nessun probe con questi filtri» + pulsante per azzerarli |
-| 8 | **Stato del sistema** | Ultimi run, prossime esecuzioni, budget residuo come barra. Banner `sigillo` se il budget e' superato | «Lo scheduler e' spento (`SCHEDULER_ENABLED=false`)» |
-
-Gerarchia: 1 e 5 sono le due sezioni con peso visivo. Le altre sono supporto.
-
----
-
-## 7. Rilettura critica
-
-> «Se una scelta e' quella che faresti per qualunque dashboard, cambiala e
-> annota perche'.»
-
-Cosa la ricerca automatica ha proposto, e cosa ho fatto invece.
-
-| Proposto | Scartato perche' | Scelto |
-|---|---|---|
-| Palette **blu #1E40AF + ambra #D97706** | E' *la* tavolozza da dashboard SaaS. Riconoscibile al primo sguardo come «generata», e non dice niente su un giornale scolastico italiano | `timbro`/`alloro`/`ottone`: viola da timbro, verde alloro, ottone. Riferimenti al mondo dei documenti e della scuola |
-| **Fira Code** per i titoli, Fira Sans per il corpo | Monospazio nei titoli e' la scorciatoia per «technical». Qui il soggetto non e' tecnico, e' editoriale. E Fira Code sui numeri grandi e' inerte | Bricolage Grotesque display + IBM Plex Sans dati. Il monospazio resta dove serve davvero: `raw_response` e slug |
-| Pattern **«Real-Time / Operations Landing»** con hero e CTA | E' la struttura di una *landing di vendita*. Questa e' una pagina dietro login per una persona sola: non ha niente da vendere e nessuno da convertire | Otto sezioni, gerarchia per utilita' operativa. Zero hero, zero CTA |
-| «Status colors (green/amber/red)» | Il verde/rosso e' inaccessibile ai daltonici ed e' anche semanticamente sbagliato qui: *non essere citato non e' un errore*, e' il caso normale da cui si parte. Colorare di rosso lo stato di default significherebbe dire alla redazione che sta sbagliando sempre | `timbro` per presenza, `grafite` per assenza — nessuno dei due e' un giudizio. `sigillo` esiste solo per gli errori veri (probe falliti, budget) |
-| Heat map per la griglia categorie | La ricerca stessa avverte: serve un fallback per i daltonici e i valori esatti a hover. Con denominatori a una cifra, un gradiente di colore comunica una certezza che non c'e' | Griglia di **numeri** con banda compatta. Il colore e' secondario, il numero e la sua incertezza sono il dato |
-
-E i tre default vietati dalla specifica, per completezza:
-
-* **fondo crema + serif alto contrasto + accento terracotta** → `gesso` ha un
-  cast verde-grigio, non giallo; il display e' un grottesco, non un serif; non
-  esiste terracotta in tavolozza (`ottone` e' desaturato e vive nell'ambito
-  degli avvisi, non come accento identitario).
-* **fondo quasi-nero con un solo accento acido** → il tema di base e' chiaro.
-  Il tema scuro esiste, e' progettato in parallelo (non un'inversione), e ha la
-  stessa tavolozza a sei colori — non un accento solo.
-* **pastiche da giornale, righe sottili e raggio zero** → raggio 6px sulle card
-  e 4px sui controlli, superfici piene con un'ombra minima. Nessun filetto
-  hairline, nessuna colonna tipo quotidiano, nessun capolettera.
-
----
-
-## 8. Vincoli tecnici non negoziabili
-
-* **Focus da tastiera visibile**: anello 2px `timbro` con 2px di offset su ogni
-  elemento interattivo. Mai `outline: none` senza sostituto.
-* **`prefers-reduced-motion`**: tutte le transizioni a 0ms, nessuna animazione
-  d'ingresso dei grafici. I dati devono essere leggibili immediatamente in ogni
-  caso — l'animazione e' un miglioramento, non il modo di trasmettere il dato.
-* **Transizioni** 150–200ms, `ease-out` in entrata. Solo `transform` e
-  `opacity`.
-* **Bersagli tocco** ≥44px su mobile, anche per le righe di tabella cliccabili.
-* **Responsive**: verificato a 375 / 768 / 1024 / 1440. Tabelle in
-  `overflow-x-auto` con ombra di bordo che segnala lo scorrimento; la griglia
-  categorie su mobile diventa una lista per categoria.
-* **Icone**: Lucide, tratto 1.5px, dimensione a token (16/20/24). Nessuna emoji.
-* **Tema scuro**: `lavagna` come fondo, `gesso` come testo, gli accenti
-  schiariti (non invertiti) per mantenere il contrasto. Progettato insieme al
-  chiaro, non dopo.
-* **Ogni percentuale porta il suo denominatore.** Non e' una linea guida
-  estetica: e' il requisito che l'API impone col tipo `Tasso`, e la UI non ha
-  modo di aggirarlo perche' il dato arriva sempre con `numeratore`,
-  `denominatore`, `ic_basso`, `ic_alto`, `affidabile`.
+Focus visibile ovunque (`:focus-visible` 2 px accento, offset 2); bersagli
+tocco da 44 px su mobile (`min-h-11` che scende con `sm:`); tabelle che
+scorrono in orizzontale dentro `.scorrevole` invece di rompere il layout;
+`prefers-reduced-motion` azzera le animazioni (le uniche: l'ingresso di vista
+da 200 ms e le transizioni di colore); stati vuoti che dicono cosa fare;
+`aria-live` sui messaggi, `role="alert"` sugli errori; il contrasto dei testi
+smorzati principali resta sopra 4.5:1 su entrambi i fondi.

@@ -11,9 +11,6 @@ import { Warning } from "@phosphor-icons/react";
 import { GLOSSARIO, GRUPPI_GLOSSARIO } from "../lib/glossario";
 import type { VoceGlossario } from "../lib/glossario";
 
-/** Il numero di voci, calcolato dal glossario: aggiungendone una si aggiorna da sé. */
-export const VOCI_TOTALI = GRUPPI_GLOSSARIO.reduce((n, g) => n + g.voci.length, 0);
-
 export function Legenda() {
   return (
     <section aria-labelledby="guida-titolo">

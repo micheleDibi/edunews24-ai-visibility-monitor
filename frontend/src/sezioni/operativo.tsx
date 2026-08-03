@@ -91,7 +91,7 @@ export function DoveInvisibile({ giorni }: { giorni: number }) {
           {gruppi.riscrivibili.length > 0 && (
             <GruppoLacune
               titolo="Basta riscrivere il pezzo"
-              tinta="timbro"
+              tinta="accento"
               descrizione="Il motore apre già queste pagine e cita qualcun altro: manca la risposta esplicita dove viene cercata, non l'indicizzazione. Il lavoro più corto, il primo da fare."
               righe={gruppi.riscrivibili}
               giorni={giorni}
@@ -102,7 +102,7 @@ export function DoveInvisibile({ giorni }: { giorni: number }) {
           {gruppi.mancanti.length > 0 && (
             <GruppoLacune
               titolo="Manca il pezzo"
-              tinta="alloro"
+              tinta="neutro"
               descrizione="Il motore non ha mai aperto il sito su queste domande: serve un pezzo nuovo, o autorevolezza sull'argomento."
               righe={gruppi.mancanti}
               giorni={giorni}
@@ -126,7 +126,7 @@ function GruppoLacune({
   onToggle,
 }: {
   titolo: string;
-  tinta: "timbro" | "alloro";
+  tinta: "accento" | "neutro";
   descrizione: string;
   righe: Lacuna[];
   giorni: number;
@@ -159,7 +159,7 @@ function GruppoLacune({
                 <span className="min-w-0 flex-1 text-base leading-snug">{l.title}</span>
                 {l.category_slug && (
                   <span className="hidden shrink-0 sm:inline-flex">
-                    <Distintivo tinta="alloro">{l.category_slug}</Distintivo>
+                    <Distintivo tinta="neutro">{l.category_slug}</Distintivo>
                   </span>
                 )}
                 <span
@@ -216,7 +216,7 @@ function DettaglioLacuna({ topicId, giorni }: { topicId: number; giorni: number 
           <ul className="mt-2.5 flex flex-wrap gap-1.5">
             {occupanti.map((o) => (
               <li key={o.domain}>
-                <Distintivo tinta="alloro">
+                <Distintivo tinta="neutro">
                   <span className="cifre">
                     {o.domain} ×{intero(o.citazioni)}
                   </span>
@@ -307,9 +307,9 @@ export function CosaFunziona({ giorni }: { giorni: number }) {
                     {s.title}
                   </a>
                   <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-                    {s.category_slug && <Distintivo tinta="alloro">{s.category_slug}</Distintivo>}
+                    {s.category_slug && <Distintivo tinta="neutro">{s.category_slug}</Distintivo>}
                     {s.target_hit > 0 && (
-                      <Distintivo tinta="timbro">
+                      <Distintivo tinta="accento">
                         <span className="cifre">{intero(s.target_hit)}× articolo giusto</span>
                       </Distintivo>
                     )}

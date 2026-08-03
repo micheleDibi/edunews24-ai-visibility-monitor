@@ -201,14 +201,14 @@ export function StatoSistema() {
                       <Distintivo
                         tinta={
                           r.status === "ok"
-                            ? "alloro"
+                            ? "neutro"
                             : r.status === "partial"
-                              ? "ottone"
+                              ? "pervinca"
                               : r.status === "running"
-                                ? "timbro"
+                                ? "accento"
                                 : r.status.startsWith("skipped")
-                                  ? "grafite"
-                                  : "sigillo"
+                                  ? "muto"
+                                  : "allarme"
                         }
                       >
                         {ETICHETTA_STATO[r.status] ?? r.status}

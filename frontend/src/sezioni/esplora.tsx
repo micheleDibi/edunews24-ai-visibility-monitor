@@ -278,10 +278,10 @@ function Riga({
           <Distintivo
             tinta={
               probe.status === "ok"
-                ? "alloro"
+                ? "neutro"
                 : probe.status === "no_search"
-                  ? "ottone"
-                  : "sigillo"
+                  ? "pervinca"
+                  : "allarme"
             }
             titolo={
               probe.status === "no_search"
@@ -294,12 +294,12 @@ function Riga({
         </td>
         <td>
           <span className="flex flex-wrap gap-1">
-            {probe.edunews_cited && <Distintivo tinta="timbro">citato</Distintivo>}
+            {probe.edunews_cited && <Distintivo tinta="accento">citato</Distintivo>}
             {probe.target_hit && <Distintivo tinta="contorno">articolo giusto</Distintivo>}
             {probe.edunews_retrieved && !probe.edunews_cited && (
-              <Distintivo tinta="ottone">recuperato</Distintivo>
+              <Distintivo tinta="pervinca">recuperato</Distintivo>
             )}
-            {probe.edunews_mention && <Distintivo tinta="alloro">mention</Distintivo>}
+            {probe.edunews_mention && <Distintivo tinta="neutro">mention</Distintivo>}
           </span>
         </td>
         <td className="cifre text-sm">
@@ -365,7 +365,7 @@ function Dettaglio({ probe }: { probe: ProbeVisto }) {
           <ul className="mt-2 flex flex-col gap-1.5">
             {probe.citazioni.map((c, i) => (
               <li key={`${c.kind}-${i}`} className="flex flex-wrap items-center gap-2.5 text-xs">
-                <Distintivo tinta={c.kind === "citation" ? "timbro" : "alloro"}>
+                <Distintivo tinta={c.kind === "citation" ? "accento" : "neutro"}>
                   {c.kind === "citation" ? "citata" : "recuperata"}
                 </Distintivo>
                 <span className={`cifre ${c.is_own ? "text-accento" : "text-testo-70"}`}>
