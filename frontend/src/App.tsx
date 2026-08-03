@@ -85,6 +85,15 @@ export default function App() {
     onSuccess: () => cache.clear(),
   });
 
+  const vista = VISTE.some((v) => v.percorso === percorso) ? percorso : "/";
+
+  // Un percorso sconosciuto renderizza la Panoramica: anche l'URL deve dirlo,
+  // o un refresh ripartirebbe da un indirizzo che non esiste. L'hook sta QUI,
+  // prima dei return condizionali: le regole degli hook non perdonano.
+  useEffect(() => {
+    if (vista !== percorso) window.history.replaceState(null, "", vista);
+  }, [vista, percorso]);
+
   if (sessione.isPending) {
     return (
       <main className="grid min-h-dvh place-items-center p-6">
@@ -96,8 +105,6 @@ export default function App() {
   if (sessione.error instanceof NonAutenticato || sessione.error) {
     return <Login onEntrato={() => void cache.invalidateQueries()} />;
   }
-
-  const vista = VISTE.some((v) => v.percorso === percorso) ? percorso : "/";
 
   return (
     <div className="min-h-dvh lato:grid lato:grid-cols-[236px_minmax(0,1fr)]">
@@ -199,16 +206,20 @@ function Guscio({
   const voci = VISTE.map((v) => {
     const corrente = vista === v.percorso;
     const Icona = v.icona;
+    // Link veri, non bottoni: i percorsi esistono davvero (tasto centrale,
+    // copia indirizzo, cronologia), il click sinistro resta gestito dalla SPA.
     return (
-      <button
+      <a
         key={v.percorso}
-        type="button"
-        onClick={() => naviga(v.percorso)}
+        href={v.percorso}
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+          e.preventDefault();
+          naviga(v.percorso);
+        }}
         aria-current={corrente ? "page" : undefined}
-        className={`relative flex min-h-11 shrink-0 cursor-pointer items-center gap-2.5 rounded-md border-0 px-2.5 py-2 text-left text-sm transition-colors lato:min-h-0 ${
-          corrente
-            ? "bg-accento/10 text-accento"
-            : "bg-transparent text-testo-70 hover:bg-testo/6"
+        className={`relative flex min-h-11 shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm no-underline transition-colors lato:min-h-0 ${
+          corrente ? "bg-accento/10 text-accento" : "text-testo-70 hover:bg-testo/6"
         }`}
       >
         <span
@@ -222,9 +233,10 @@ function Guscio({
         {v.percorso === "/invisibile" && lacune > 0 && (
           <span className="cifre ml-auto rounded-[6px] bg-neutro-900 px-1.5 py-px text-[11px] text-neutro-300">
             {lacune}
+            <span className="sr-only"> articoli mai citati</span>
           </span>
         )}
-      </button>
+      </a>
     );
   });
 
@@ -233,7 +245,7 @@ function Guscio({
       <span
         aria-hidden
         className={`h-1.5 w-1.5 rounded-full ${
-          scheduler ? "bg-accento shadow-bagliore-punto" : "bg-testo-40"
+          scheduler ? "bg-accento bagliore-punto" : "bg-testo-40"
         }`}
       />
       {salute.isPending
@@ -299,7 +311,7 @@ function Marchio() {
     <div className="flex items-center gap-2.5 px-2">
       <span
         aria-hidden
-        className="h-[9px] w-[9px] shrink-0 rounded-[3px] bg-accento shadow-bagliore"
+        className="h-[9px] w-[9px] shrink-0 rounded-[3px] bg-accento bagliore"
       />
       <div className="min-w-0">
         <p className="display whitespace-nowrap text-base leading-tight">Visibilità AI</p>
@@ -332,7 +344,7 @@ function Login({ onEntrato }: { onEntrato: () => void }) {
         <div className="flex items-center gap-2.5">
           <span
             aria-hidden
-            className="h-2.5 w-2.5 rounded-[3px] bg-accento shadow-bagliore"
+            className="h-2.5 w-2.5 rounded-[3px] bg-accento bagliore"
           />
           <h1 className="display text-[26px]">Visibilità AI</h1>
         </div>

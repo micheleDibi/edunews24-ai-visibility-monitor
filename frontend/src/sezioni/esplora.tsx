@@ -1,8 +1,8 @@
 /** Vista «Esplora probe»: ogni interrogazione registrata, con risposta e fonti. */
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { CaretDown, CaretRight, MagnifyingGlass, Warning, X } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Bottone, Distintivo, Scheletro, StatoErrore, StatoVuoto } from "../components/base";
 import { api, type ProbeVisto } from "../lib/api";
@@ -28,10 +28,30 @@ const FILTRI_VUOTI: Filtri = { provider: "", status: "", cited: "", q: "" };
 
 export function EsploraProbe({ giorni }: { giorni: number }) {
   const [filtri, setFiltri] = useState<Filtri>(FILTRI_VUOTI);
+  const [ricerca, setRicerca] = useState("");
   const [offset, setOffset] = useState(0);
   const [aperto, setAperto] = useState<number | null>(null);
 
-  const attivi = Object.values(filtri).some(Boolean);
+  // Il periodo cambia da fuori (la sidebar), senza smontare la vista: la
+  // pagina su cui si era non ha piu' senso nel periodo nuovo. Regolazione in
+  // render, senza effect: niente fetch intermedia con l'offset vecchio.
+  const [giorniVisti, setGiorniVisti] = useState(giorni);
+  if (giorni !== giorniVisti) {
+    setGiorniVisti(giorni);
+    setOffset(0);
+  }
+
+  // La ricerca si digita subito ma interroga con calma: una fetch per
+  // battitura sarebbe una richiesta (e un flash) a ogni lettera.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFiltri((f) => (f.q === ricerca ? f : { ...f, q: ricerca }));
+      setOffset(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [ricerca]);
+
+  const attivi = Object.values(filtri).some(Boolean) || ricerca !== "";
 
   const { data, isPending, error, refetch } = useQuery({
     queryKey: ["probe", giorni, filtri, offset],
@@ -45,6 +65,9 @@ export function EsploraProbe({ giorni }: { giorni: number }) {
         cited: filtri.cited === "" ? undefined : filtri.cited === "si",
         q: filtri.q || undefined,
       }),
+    // La pagina precedente resta visibile mentre arriva la nuova: niente
+    // scheletro a ogni cambio di filtro o pagina.
+    placeholderData: keepPreviousData,
   });
 
   const aggiorna = (chiave: keyof Filtri, valore: string) => {
@@ -76,8 +99,8 @@ export function EsploraProbe({ giorni }: { giorni: number }) {
             />
             <input
               type="search"
-              value={filtri.q}
-              onChange={(e) => aggiorna("q", e.target.value)}
+              value={ricerca}
+              onChange={(e) => setRicerca(e.target.value)}
               placeholder="Cerca nella domanda…"
               className="min-h-11 w-60 rounded-md border border-divisore bg-superficie pl-8 pr-2.5 text-sm caret-accento hover:border-testo-45 focus-visible:border-accento sm:min-h-9"
             />
@@ -122,6 +145,7 @@ export function EsploraProbe({ giorni }: { giorni: number }) {
               type="button"
               onClick={() => {
                 setFiltri(FILTRI_VUOTI);
+                setRicerca("");
                 setOffset(0);
               }}
               className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-sm font-medium text-accento transition-colors hover:bg-accento/10 active:bg-accento/18 sm:min-h-9"
@@ -158,7 +182,9 @@ export function EsploraProbe({ giorni }: { giorni: number }) {
               <table className="tabella min-w-[56rem]">
                 <thead>
                   <tr>
-                    <th scope="col" className="w-7" />
+                    <th scope="col" className="w-10">
+                      <span className="sr-only">Dettaglio</span>
+                    </th>
                     <th scope="col">Data</th>
                     <th scope="col">Domanda</th>
                     <th scope="col">Provider</th>
@@ -249,13 +275,15 @@ function Riga({
   return (
     <>
       <tr className="align-top">
-        <td className="!pr-0">
+        <td className="!py-1.5 !pr-0">
           <button
             type="button"
             onClick={onToggle}
             aria-expanded={espanso}
-            aria-label={espanso ? "Chiudi il dettaglio" : "Apri il dettaglio"}
-            className="cursor-pointer p-1 text-testo-45"
+            // Il nome dice QUALE riga: venticinque bottoni «apri il dettaglio»
+            // identici sono un labirinto per chi naviga con uno screen reader.
+            aria-label={`${espanso ? "Chiudi" : "Apri"} il dettaglio: ${probe.query_text}`}
+            className="grid min-h-11 min-w-11 cursor-pointer place-items-center rounded-sm text-testo-45 transition-colors hover:bg-testo/6 sm:min-h-8 sm:min-w-8"
           >
             <Caret size={14} aria-hidden />
           </button>

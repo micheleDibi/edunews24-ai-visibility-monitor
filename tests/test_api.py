@@ -462,6 +462,34 @@ class TestSezioniOperative:
                     is_own=True,
                 )
             )
+        # Un probe FALLITO con una citazione parziale gia' estratta: le regole
+        # di esclusione valgono anche qui — non deve inquinare gli occupanti
+        # ne' comparire nel campione.
+        r_fallito = Run(status="ok", kind="hourly")
+        session.add(r_fallito)
+        await session.flush()
+        p_fallito = Probe(
+            run_id=r_fallito.id,
+            query_id=q.id,
+            provider="anthropic",
+            model="m",
+            mode="retrieval",
+            status="error",
+            created_at=ADESSO - timedelta(minutes=5),
+            latency_ms=100,
+            edunews_cited=False,
+        )
+        session.add(p_fallito)
+        await session.flush()
+        session.add(
+            Citation(
+                probe_id=p_fallito.id,
+                domain="intruso.it",
+                url="https://intruso.it/x",
+                kind="citation",
+                is_own=False,
+            )
+        )
         await session.commit()
 
         await client.post("/api/auth/login", json={"password": PASSWORD_TEST})
@@ -470,8 +498,8 @@ class TestSezioniOperative:
         assert [(o["domain"], o["citazioni"]) for o in dettaglio["occupanti"]] == [
             ("orizzontescuola.it", 3),
             ("skuola.net", 1),
-        ], "il dominio proprio non e' mai un occupante"
-        assert len(dettaglio["probe"]) == 3
+        ], "il dominio proprio e i probe falliti non sono mai occupanti"
+        assert len(dettaglio["probe"]) == 3, "il probe fallito resta fuori dal campione"
         # I piu' recenti per primi, con domanda e risposta.
         assert dettaglio["probe"][0]["answer_text"] == "risposta numero 2"
         assert "lacuna" in dettaglio["probe"][0]["query_text"]

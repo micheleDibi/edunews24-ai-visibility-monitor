@@ -1,6 +1,6 @@
 /** Vista «Panoramica»: il KPI hero, le tessere secondarie e la tendenza. */
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Minus, TrendDown, TrendUp } from "@phosphor-icons/react";
 import {
   Area,
@@ -167,7 +167,7 @@ export function HeaderKpi({ giorni }: { giorni: number }) {
           {/* La sottolineatura: l'accento come marchio corto, col suo bagliore. */}
           <div
             aria-hidden
-            className="mt-4 h-[3px] w-14 rounded-[2px] bg-accento shadow-bagliore-riga"
+            className="mt-4 h-[3px] w-14 rounded-[2px] bg-accento bagliore-riga"
           />
           <Variazione delta={k.citation_rate_delta} />
           <p className="cifre mt-2.5 text-xs text-testo-45">
@@ -227,10 +227,13 @@ export function Tendenza({ giorni }: { giorni: number }) {
   });
 
   // L'elenco dei provider per il filtro NON dipende dal filtro stesso,
-  // altrimenti selezionandone uno sparirebbero gli altri bottoni.
+  // altrimenti selezionandone uno sparirebbero gli altri bottoni. E resta
+  // stabile durante il cambio periodo: senza placeholder il gruppo di bottoni
+  // sparirebbe a ogni refetch, facendo cadere il focus di chi lo stava usando.
   const tutti = useQuery({
     queryKey: ["tendenza", giorni, ""],
     queryFn: () => api.tendenza(giorni, undefined),
+    placeholderData: keepPreviousData,
   });
   const nomiProvider = useMemo(
     () => [...new Set((tutti.data ?? []).map((p) => p.provider))].sort(),
@@ -404,7 +407,7 @@ function Suggerimento({
   if (!active || !payload?.length) return null;
   const riga = payload[0]?.payload;
   return (
-    <div className="rounded-md bg-superficie p-3 text-sm shadow-md">
+    <div className="rounded-md bg-superficie p-3 text-sm ombra-md">
       <p className="font-medium">{label ? dataBreve(label) : ""}</p>
       <ul className="mt-1.5 space-y-1">
         {payload

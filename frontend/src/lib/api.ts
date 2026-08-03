@@ -233,11 +233,27 @@ const q = (parametri: Record<string, string | number | boolean | undefined>) => 
 };
 
 export const api = {
-  login: (password: string) =>
-    chiama<{ ok: boolean }>("/auth/login", {
+  // Il login NON passa da `chiama`: quella intercetta ogni 401 come «sessione
+  // scaduta», ma qui il 401 significa «password non valida» e il suo `detail`
+  // e' il messaggio da mostrare. Inghiottirlo lasciava l'utente davanti a un
+  // fuorviante «sessione assente o scaduta» a ogni password sbagliata.
+  login: async (password: string): Promise<{ ok: boolean }> => {
+    const risposta = await fetch("/api/auth/login", {
       method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
-    }),
+    });
+    if (!risposta.ok) {
+      const corpo: unknown = await risposta.json().catch(() => null);
+      const detail =
+        corpo && typeof corpo === "object" && "detail" in corpo
+          ? String((corpo as { detail: unknown }).detail)
+          : `richiesta fallita (${risposta.status})`;
+      throw new Error(detail);
+    }
+    return (await risposta.json()) as { ok: boolean };
+  },
   logout: () => chiama<{ ok: boolean }>("/auth/logout", { method: "POST" }),
   me: () => chiama<{ soggetto: string }>("/me"),
 
@@ -249,7 +265,11 @@ export const api = {
     if (!risposta.ok && risposta.status !== 503) {
       throw new Error(`richiesta fallita (${risposta.status})`);
     }
-    return (await risposta.json()) as Salute;
+    const corpo: unknown = await risposta.json().catch(() => null);
+    if (corpo === null) {
+      throw new Error(`risposta non valida dal servizio (${risposta.status})`);
+    }
+    return corpo as Salute;
   },
   costi: () => chiama<StatoCosti>("/costs"),
 

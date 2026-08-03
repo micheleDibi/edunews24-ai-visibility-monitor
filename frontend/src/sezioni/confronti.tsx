@@ -309,7 +309,7 @@ export function Domini({ giorni }: { giorni: number }) {
             {data.map((d, i) => (
               <li
                 key={d.domain}
-                className={`grid grid-cols-[18px_minmax(0,1fr)_minmax(64px,120px)_52px] items-center gap-3 rounded-sm px-1.5 py-0.5 ${
+                className={`grid grid-cols-[18px_minmax(0,1fr)_minmax(56px,110px)_minmax(72px,auto)] items-center gap-3 rounded-sm px-1.5 py-0.5 ${
                   d.proprio ? "bg-accento/8" : ""
                 }`}
               >
@@ -330,16 +330,21 @@ export function Domini({ giorni }: { giorni: number }) {
                 >
                   <span
                     className={`absolute bottom-0 left-0 top-0 rounded-full ${
-                      d.proprio ? "bg-accento" : "bg-neutro-600"
+                      d.proprio ? "bg-accento" : "bg-neutro-400"
                     }`}
                     style={{ width: `${Math.round((d.citazioni / massimo) * 100)}%` }}
                   />
                 </span>
-                <span
-                  className="cifre text-right text-xs text-testo-70"
-                  title={`${d.quota.numeratore}/${d.quota.denominatore} probe`}
-                >
-                  {d.quota.tasso === null ? "—" : percentuale(d.quota.tasso)}
+                {/* Il conto e' VISIBILE, non in un title: «mai una percentuale
+                    nuda» vale anche qui — 4% su 25 probe e 4% su 2.500 non
+                    sono lo stesso dato. */}
+                <span className="text-right">
+                  <span className="cifre block text-xs text-testo-70">
+                    {d.quota.tasso === null ? "—" : percentuale(d.quota.tasso)}
+                  </span>
+                  <span className="cifre block text-[10px] leading-tight text-testo-45">
+                    {intero(d.quota.numeratore)}/{intero(d.quota.denominatore)}
+                  </span>
                 </span>
               </li>
             ))}

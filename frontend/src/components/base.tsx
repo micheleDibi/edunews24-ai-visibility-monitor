@@ -137,7 +137,10 @@ export function Distintivo({
     neutro: "bg-neutro-800 text-neutro-100",
     pervinca: "bg-pervinca-900 text-pervinca-200",
     muto: "border border-divisore text-testo-45",
-    allarme: "border border-accento-700 text-accento-300",
+    // Il bordo usa l'accento base a mezza opacita', non il passo 700: le
+    // rampe si specchiano fra i temi e il 700 chiaro (#d2cefd) rendeva il
+    // contorno invisibile (1.5:1) sul fondo chiaro.
+    allarme: "border border-accento/45 text-accento-300",
     contorno: "border border-accento text-accento",
   } as const;
   return (

@@ -72,7 +72,13 @@ eventuale futuro toggle manuale dovra' mettere la classe su `<html>`.
   passo 1000−N scuro, coi 900 ritoccati a mano dal design.
 - **Testo smorzato pre-mixato**: `--color-testo-70/60/55/45/40` e
   `--color-divisore` via `color-mix`, cosi' esistono le utility
-  (`text-testo-55`, `border-divisore`) e i `var()` per Recharts.
+  (`text-testo-55`, `border-divisore`) e i `var()` per Recharts. La variante
+  chiara RICALIBRA le alfa (82/74/70/60/55%) invece di riusare quelle scure:
+  la fusione e' asimmetrica fra i fondi, e i rapporti di contrasto devono
+  coincidere nei due temi (calcolati: 7.6 / 5.9 / 5.2 / 3.9 / 3.4).
+- **I token ombra NON stanno in `@theme`**: Tailwind li inlinerebbe nelle
+  utility al build e gli override del tema chiaro morirebbero. Vivono su
+  `:root` e le utility `ombra-*` / `bagliore*` li leggono a runtime.
 - **Serie del grafico**: `--color-serie-1…4`, contratto separato dalla
   tavolozza UI, con valori per tema (piu' chiare sul fondo scuro). Consumate
   solo da `SERIE_PROVIDER` in `lib/format.ts`, insieme ai tratteggi che
@@ -125,5 +131,8 @@ tocco da 44 px su mobile (`min-h-11` che scende con `sm:`); tabelle che
 scorrono in orizzontale dentro `.scorrevole` invece di rompere il layout;
 `prefers-reduced-motion` azzera le animazioni (le uniche: l'ingresso di vista
 da 200 ms e le transizioni di colore); stati vuoti che dicono cosa fare;
-`aria-live` sui messaggi, `role="alert"` sugli errori; il contrasto dei testi
-smorzati principali resta sopra 4.5:1 su entrambi i fondi.
+`aria-live` sui messaggi (regione montata stabilmente, o l'annuncio si
+perde), `role="alert"` sugli errori; il contrasto: testo pieno e smorzati da
+`testo-55` in su restano sopra 4.5:1 su entrambi i fondi, `testo-45`/`-40`
+sono annotazioni deliberatamente de-enfatizzate (3.9 / 3.4, uguali nei due
+temi), i componenti d'interfaccia (barre, contorni) sopra 3:1.

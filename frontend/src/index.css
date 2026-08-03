@@ -105,19 +105,50 @@
   --radius-md: 8px;
   --radius-lg: 14px;
 
-  /* --- Elevazione e bagliori --------------------------------------------- */
-  /* Su fondo scuro l'elevazione e' un bordo hairline + oscurita' ambiente,
-     mai ombre pesanti impilate. */
-  --shadow-sm: 0 0 0 1px #3f424d;
-  --shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgb(0 0 0 / 0.55);
-  --shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgb(0 0 0 / 0.65);
-  /* I bagliori dell'accento (pallino brand, sottolineatura del KPI, barre):
-     piu' intensi sul fondo scuro, smorzati su quello chiaro. */
-  --shadow-bagliore: 0 0 16px color-mix(in srgb, var(--color-accento) 60%, transparent);
-  --shadow-bagliore-punto: 0 0 8px color-mix(in srgb, var(--color-accento) 70%, transparent);
-  --shadow-bagliore-riga: 0 0 12px color-mix(in srgb, var(--color-accento) 50%, transparent);
-  --shadow-bagliore-barra: 0 0 10px color-mix(in srgb, var(--color-accento) 40%, transparent);
+  /* --- Elevazione -------------------------------------------------------- */
+  /* ATTENZIONE: i token ombra NON vivono in @theme. Tailwind inlina i valori
+     di --shadow-* dentro le utility al momento del build, e gli override del
+     tema chiaro diventerebbero lettera morta (successo davvero: tooltip con
+     l'anello scuro sul fondo chiaro). Qui si spegne solo il namespace di
+     default; i token veri stanno su :root subito sotto, e le utility
+     `ombra-*` / `bagliore*` li leggono a runtime con var(). */
+  --shadow-*: initial;
+}
 
+/* Elevazione e bagliori — variante scura canonica. Su fondo scuro
+   l'elevazione e' un bordo hairline + oscurita' ambiente, mai ombre pesanti
+   impilate; i bagliori dell'accento (pallino brand, sottolineatura del KPI,
+   barre) sono piu' intensi che sul chiaro. */
+:root {
+  --ombra-sm: 0 0 0 1px #3f424d;
+  --ombra-md: 0 0 0 1px #595d6c, 0 6px 18px rgb(0 0 0 / 0.55);
+  --ombra-lg: 0 0 0 1px #9397ab, 0 16px 40px rgb(0 0 0 / 0.65);
+  --bagliore-brand: 0 0 16px color-mix(in srgb, var(--color-accento) 60%, transparent);
+  --bagliore-punto: 0 0 8px color-mix(in srgb, var(--color-accento) 70%, transparent);
+  --bagliore-riga: 0 0 12px color-mix(in srgb, var(--color-accento) 50%, transparent);
+  --bagliore-barra: 0 0 10px color-mix(in srgb, var(--color-accento) 40%, transparent);
+}
+
+@utility ombra-sm {
+  box-shadow: var(--ombra-sm);
+}
+@utility ombra-md {
+  box-shadow: var(--ombra-md);
+}
+@utility ombra-lg {
+  box-shadow: var(--ombra-lg);
+}
+@utility bagliore {
+  box-shadow: var(--bagliore-brand);
+}
+@utility bagliore-punto {
+  box-shadow: var(--bagliore-punto);
+}
+@utility bagliore-riga {
+  box-shadow: var(--bagliore-riga);
+}
+@utility bagliore-barra {
+  box-shadow: var(--bagliore-barra);
 }
 
 /* ===========================================================================
@@ -140,6 +171,17 @@
     --color-accento: #796cbf;
     --color-pervinca: #7972a9;
     --color-divisore: color-mix(in srgb, var(--color-testo) 14%, transparent);
+
+    /* Smorzati RICALIBRATI, non ricalcolati: la fusione alfa e' asimmetrica
+       fra i due fondi, e le stesse percentuali del tema scuro renderebbero
+       il testo di lettura a 3.4:1 sul chiaro. Queste alfa riproducono i
+       rapporti di contrasto della variante scura (7.6 / 5.9 / 5.2 / 3.9 /
+       3.4), calcolati, non stimati. */
+    --color-testo-70: color-mix(in srgb, var(--color-testo) 82%, transparent);
+    --color-testo-60: color-mix(in srgb, var(--color-testo) 74%, transparent);
+    --color-testo-55: color-mix(in srgb, var(--color-testo) 70%, transparent);
+    --color-testo-45: color-mix(in srgb, var(--color-testo) 60%, transparent);
+    --color-testo-40: color-mix(in srgb, var(--color-testo) 55%, transparent);
 
     --color-neutro-100: #292b31;
     --color-neutro-200: #3f424d;
@@ -176,22 +218,13 @@
     --color-serie-3: #75798c;
     --color-serie-4: #9da1b5;
 
-    --shadow-sm: 0 0 0 1px #e4e7f5;
-    --shadow-md: 0 0 0 1px #e4e7f5, 0 6px 18px rgb(22 24 38 / 0.08);
-    --shadow-lg: 0 0 0 1px #cfd3e5, 0 16px 40px rgb(22 24 38 / 0.14);
-    --shadow-bagliore: 0 0 16px color-mix(in srgb, var(--color-accento) 35%, transparent);
-    --shadow-bagliore-punto: 0 0 8px color-mix(in srgb, var(--color-accento) 45%, transparent);
-    --shadow-bagliore-riga: 0 0 12px color-mix(in srgb, var(--color-accento) 30%, transparent);
-    --shadow-bagliore-barra: 0 0 10px color-mix(in srgb, var(--color-accento) 25%, transparent);
-  }
-
-  /* Le sfumature dello scorrimento tornano a inchiostro su fondo chiaro. */
-  .scorrevole {
-    background-image:
-      linear-gradient(to right, var(--color-superficie) 30%, transparent),
-      linear-gradient(to left, var(--color-superficie) 30%, transparent),
-      linear-gradient(to right, rgb(22 24 38 / 0.12), transparent 12px),
-      linear-gradient(to left, rgb(22 24 38 / 0.12), transparent 12px);
+    --ombra-sm: 0 0 0 1px #e4e7f5;
+    --ombra-md: 0 0 0 1px #e4e7f5, 0 6px 18px rgb(22 24 38 / 0.08);
+    --ombra-lg: 0 0 0 1px #cfd3e5, 0 16px 40px rgb(22 24 38 / 0.14);
+    --bagliore-brand: 0 0 16px color-mix(in srgb, var(--color-accento) 35%, transparent);
+    --bagliore-punto: 0 0 8px color-mix(in srgb, var(--color-accento) 45%, transparent);
+    --bagliore-riga: 0 0 12px color-mix(in srgb, var(--color-accento) 30%, transparent);
+    --bagliore-barra: 0 0 10px color-mix(in srgb, var(--color-accento) 25%, transparent);
   }
 }
 
@@ -371,6 +404,19 @@ body {
   background-position: left, right, left, right;
   background-repeat: no-repeat;
   background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+}
+
+/* L'override chiaro sta QUI, dopo la regola base: a parita' di specificita'
+   vince l'ultima dichiarazione, e dentro il blocco light in alto sarebbe
+   sovrascritto dalla shorthand `background:` della regola base. */
+@media (prefers-color-scheme: light) {
+  .scorrevole {
+    background-image:
+      linear-gradient(to right, var(--color-superficie) 30%, transparent),
+      linear-gradient(to left, var(--color-superficie) 30%, transparent),
+      linear-gradient(to right, rgb(22 24 38 / 0.12), transparent 12px),
+      linear-gradient(to left, rgb(22 24 38 / 0.12), transparent 12px);
+  }
 }
 
 /* ===========================================================================

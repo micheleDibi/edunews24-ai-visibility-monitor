@@ -57,14 +57,19 @@ export function StatoSistema() {
         </Bottone>
       </div>
 
-      {messaggio && (
-        <p
-          aria-live="polite"
-          className="mt-5 rounded-md bg-accento-900 px-4 py-2.5 text-sm text-accento-200"
-        >
-          {messaggio}
-        </p>
-      )}
+      {/* La regione live esiste SEMPRE: montarla insieme al messaggio fa
+          perdere l'annuncio agli screen reader, che ascoltano i cambiamenti
+          di regioni gia' presenti. */}
+      <p
+        aria-live="polite"
+        className={
+          messaggio
+            ? "mt-5 rounded-md bg-accento-900 px-4 py-2.5 text-sm text-accento-200"
+            : "sr-only"
+        }
+      >
+        {messaggio}
+      </p>
 
       {superato && (
         <div role="alert" className="mt-5 rounded-md bg-accento-900 px-4 py-3">
@@ -299,7 +304,10 @@ function Barra({ etichetta, speso, tetto }: { etichetta: string; speso: number; 
         aria-label={`Budget ${etichetta.toLowerCase()}: ${euro(speso)} su ${euro(tetto)}`}
       >
         <div
-          className="absolute bottom-0 left-0 top-0 rounded-[3px] bg-accento-600 shadow-bagliore-barra transition-[width] duration-200"
+          // `accento` base, non il passo 600: sul fondo chiaro il 600 chiaro
+          // (#b5abfc) scendeva a 1.8:1 sulla traccia — sotto il 3:1 dei
+          // componenti d'interfaccia.
+          className="absolute bottom-0 left-0 top-0 rounded-[3px] bg-accento bagliore-barra transition-[width] duration-200"
           style={{ width: `${quota * 100}%` }}
         />
       </div>
