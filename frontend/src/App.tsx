@@ -185,6 +185,11 @@ function Guscio({
     refetchInterval: 60_000,
     retry: false,
   });
+
+  // Il badge sulla coda di lavoro: stessa query key della Panoramica, quindi
+  // in cache condivisa — nessuna richiesta in piu' quando si naviga.
+  const kpi = useQuery({ queryKey: ["kpi", giorni], queryFn: () => api.kpi(giorni) });
+  const lacune = kpi.data?.lacune_totali ?? 0;
   const scheduler = salute.data?.scheduler === "attivo";
   const prossimo = salute.data?.prossime_esecuzioni?.ciclo_orario;
   const oraCiclo = prossimo
@@ -214,6 +219,11 @@ function Guscio({
         />
         <Icona size={17} className="shrink-0" aria-hidden />
         <span className="whitespace-nowrap">{v.etichetta}</span>
+        {v.percorso === "/invisibile" && lacune > 0 && (
+          <span className="cifre ml-auto rounded-[6px] bg-neutro-900 px-1.5 py-px text-[11px] text-neutro-300">
+            {lacune}
+          </span>
+        )}
       </button>
     );
   });

@@ -12,7 +12,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi import Query as QueryParam
 from pydantic import BaseModel, Field
 from sqlalchemy import Select, distinct, func, select
@@ -76,6 +76,16 @@ class Kpi(BaseModel):
     costo_eur: Decimal = Field(
         description="Costo di TUTTI i probe del periodo, falliti compresi: sono stati pagati"
     )
+    lacune_totali: int = Field(
+        description=(
+            "Articoli sondati (almeno la soglia minima di probe) e mai citati nel "
+            "periodo. Sempre in modalita' retrieval, qualunque sia `mode`: e' il "
+            "conteggio della coda di lavoro, non una metrica della modalita'."
+        )
+    )
+    lacune_riscrivibili: int = Field(
+        description="Di quelle, gli articoli che il motore ha gia' aperto senza citarli"
+    )
 
 
 @router.get("/kpi", response_model=Kpi)
@@ -90,6 +100,32 @@ async def kpi(
 
     attuale = (await db.execute(_conteggi(mode, da))).one()
     precedente = (await db.execute(_conteggi(mode, prec_da, prec_a))).one()
+
+    # Il conteggio delle lacune per il badge di navigazione: la stessa
+    # subquery di /gaps, ridotta al COUNT. Senza, il frontend dovrebbe
+    # scaricare la lista intera (troncata dal limit) solo per contare.
+    sotto_lacune = (
+        select(
+            Topic.id.label("topic_id"),
+            (func.count().filter(Probe.edunews_retrieved) > 0).label("riscrivibile"),
+        )
+        .select_from(Probe)
+        .join(Query, Query.id == Probe.query_id)
+        .join(Topic, Topic.id == Query.topic_id)
+        .where(*filtri_probe(mode="retrieval", da=da))
+        .group_by(Topic.id)
+        .having(func.count().filter(Probe.edunews_cited) == 0)
+        .having(func.count() >= SOGLIA_MINIMA)
+        .subquery()
+    )
+    lacune_totali, lacune_riscrivibili = (
+        await db.execute(
+            select(
+                func.count(),
+                func.count().filter(sotto_lacune.c.riscrivibile),
+            ).select_from(sotto_lacune)
+        )
+    ).one()
 
     # Il costo NON passa da `filtri_probe`: include i probe falliti, perche'
     # sono stati fatturati comunque. E' l'unica metrica che deliberatamente non
@@ -126,6 +162,8 @@ async def kpi(
         probe_falliti=falliti,
         probe_senza_ricerca=senza_ricerca,
         costo_eur=Decimal(str(costo)),
+        lacune_totali=lacune_totali,
+        lacune_riscrivibili=lacune_riscrivibili,
     )
 
 
@@ -456,6 +494,100 @@ async def gaps(
         )
         for r in (await db.execute(stmt)).all()
     ]
+
+
+class OccupanteLacuna(BaseModel):
+    domain: str
+    citazioni: int
+
+
+class ProbeLacuna(BaseModel):
+    id: int
+    created_at: datetime
+    provider: str
+    query_text: str
+    query_strategy: str
+    answer_text: str | None
+
+
+class DettaglioLacuna(BaseModel):
+    topic_id: int
+    occupanti: list[OccupanteLacuna] = Field(
+        description="Domini citati al posto dell'articolo, su TUTTI i probe del periodo"
+    )
+    probe: list[ProbeLacuna] = Field(description="Campione dei probe piu' recenti")
+
+
+@router.get("/gaps/{topic_id}", response_model=DettaglioLacuna)
+async def dettaglio_lacuna(
+    db: Db,
+    admin: Admin,
+    topic_id: int,
+    days: Giorni = 30,
+) -> DettaglioLacuna:
+    """Chi occupa il posto di QUESTO articolo, e con quali risposte.
+
+    Gli occupanti sono aggregati su tutti i probe del topic nel periodo, non
+    sui primi N di una pagina: la versione precedente li contava client-side
+    sui 6 probe piu' recenti, e la classifica cambiava col limit.
+    """
+    da = inizio_periodo(days)
+
+    esiste = (
+        await db.execute(select(func.count()).where(Topic.id == topic_id))
+    ).scalar_one()
+    if not esiste:
+        raise HTTPException(status_code=404, detail=f"argomento inesistente: {topic_id}")
+
+    occupanti = (
+        await db.execute(
+            select(Citation.domain, func.count().label("citazioni"))
+            .join(Probe, Probe.id == Citation.probe_id)
+            .join(Query, Query.id == Probe.query_id)
+            .where(
+                *filtri_probe(mode="retrieval", da=da),
+                Query.topic_id == topic_id,
+                Citation.kind == "citation",
+                Citation.is_own.is_(False),
+            )
+            .group_by(Citation.domain)
+            .order_by(func.count().desc(), Citation.domain.asc())
+            .limit(12)
+        )
+    ).all()
+
+    probe = (
+        await db.execute(
+            select(
+                Probe.id,
+                Probe.created_at,
+                Probe.provider,
+                Query.text.label("query_text"),
+                Query.strategy.label("query_strategy"),
+                Probe.answer_text,
+            )
+            .join(Query, Query.id == Probe.query_id)
+            .where(*filtri_probe(mode="retrieval", da=da), Query.topic_id == topic_id)
+            .order_by(Probe.created_at.desc(), Probe.id.desc())
+            .limit(4)
+        )
+    ).all()
+
+    return DettaglioLacuna(
+        topic_id=topic_id,
+        occupanti=[OccupanteLacuna(domain=r.domain, citazioni=r.citazioni) for r in occupanti],
+        probe=[
+            ProbeLacuna(
+                id=r.id,
+                created_at=r.created_at,
+                provider=r.provider,
+                query_text=r.query_text,
+                query_strategy=r.query_strategy,
+                answer_text=r.answer_text,
+            )
+            for r in probe
+        ],
+    )
 
 
 class Successo(BaseModel):

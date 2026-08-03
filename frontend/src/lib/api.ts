@@ -39,6 +39,29 @@ export interface Kpi {
   probe_falliti: number;
   probe_senza_ricerca: number;
   costo_eur: string;
+  /** Coda di lavoro: articoli sondati e mai citati (sempre retrieval). */
+  lacune_totali: number;
+  lacune_riscrivibili: number;
+}
+
+export interface OccupanteLacuna {
+  domain: string;
+  citazioni: number;
+}
+
+export interface ProbeLacuna {
+  id: number;
+  created_at: string;
+  provider: string;
+  query_text: string;
+  query_strategy: string;
+  answer_text: string | null;
+}
+
+export interface DettaglioLacuna {
+  topic_id: number;
+  occupanti: OccupanteLacuna[];
+  probe: ProbeLacuna[];
 }
 
 export interface PuntoTendenza {
@@ -236,6 +259,8 @@ export const api = {
     chiama<PuntoTendenza[]>(`/trend${q({ days: giorni, provider })}`),
   provider: (giorni: number) => chiama<RigaProvider[]>(`/providers${q({ days: giorni })}`),
   categorie: (giorni: number) => chiama<CellaCategoria[]>(`/categories${q({ days: giorni })}`),
+  lacuna: (topicId: number, giorni: number) =>
+    chiama<DettaglioLacuna>(`/gaps/${topicId}${q({ days: giorni })}`),
   lacune: (giorni: number, minProbe: number) =>
     chiama<Lacuna[]>(`/gaps${q({ days: giorni, min_probe: minProbe })}`),
   successi: (giorni: number) => chiama<Successo[]>(`/wins${q({ days: giorni })}`),

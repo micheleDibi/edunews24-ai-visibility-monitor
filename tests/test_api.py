@@ -383,6 +383,159 @@ class TestSezioniOperative:
         assert [x["recuperi"] for x in lacune] == [7, 2, 0]
         assert [x["probe"] for x in lacune] == [12, 10, 30]
 
+    async def test_dettaglio_lacuna_aggrega_gli_occupanti_su_tutti_i_probe(
+        self, autenticato, client, session
+    ):
+        """Gli occupanti si contano su TUTTI i probe del periodo, non sui primi
+        N di una pagina: la versione client-side li calcolava sui 6 probe piu'
+        recenti e la classifica cambiava col limit."""
+        t = Topic(
+            source_id=424242,
+            slug="lacuna-occupata",
+            title="Articolo mai citato",
+            category_slug="scuola",
+            tags=[],
+            faq_questions=[],
+            probe_count=0,
+            published_at=ADESSO - timedelta(days=2),
+        )
+        session.add(t)
+        await session.flush()
+        q = Query(
+            text="una domanda sulla lacuna abbastanza lunga da valere?",
+            text_hash="hash-lacuna-occupata",
+            strategy="keyword_intent",
+            generator="template",
+            category_slug="scuola",
+            topic_id=t.id,
+        )
+        session.add(q)
+        await session.flush()
+
+        # 3 probe: orizzontescuola citato in tutti, skuola.net in uno solo, il
+        # dominio proprio recuperato (non conta come occupante).
+        for n in range(3):
+            r = Run(status="ok", kind="hourly")
+            session.add(r)
+            await session.flush()
+            p = Probe(
+                run_id=r.id,
+                query_id=q.id,
+                provider="openai",
+                model="gpt-5.6-luna",
+                mode="retrieval",
+                status="ok",
+                created_at=ADESSO - timedelta(hours=3 - n),
+                cost_eur=Decimal("0.01"),
+                latency_ms=1000,
+                edunews_cited=False,
+                edunews_retrieved=True,
+                answer_text=f"risposta numero {n}",
+            )
+            session.add(p)
+            await session.flush()
+            session.add(
+                Citation(
+                    probe_id=p.id,
+                    domain="orizzontescuola.it",
+                    url="https://www.orizzontescuola.it/x",
+                    kind="citation",
+                    is_own=False,
+                )
+            )
+            if n == 0:
+                session.add(
+                    Citation(
+                        probe_id=p.id,
+                        domain="skuola.net",
+                        url="https://www.skuola.net/x",
+                        kind="citation",
+                        is_own=False,
+                    )
+                )
+            session.add(
+                Citation(
+                    probe_id=p.id,
+                    domain="edunews24.it",
+                    url="https://edunews24.it/scuola/lacuna-occupata",
+                    kind="source",
+                    is_own=True,
+                )
+            )
+        await session.commit()
+
+        await client.post("/api/auth/login", json={"password": PASSWORD_TEST})
+        dettaglio = (await client.get(f"/api/gaps/{t.id}?days=7")).json()
+
+        assert [(o["domain"], o["citazioni"]) for o in dettaglio["occupanti"]] == [
+            ("orizzontescuola.it", 3),
+            ("skuola.net", 1),
+        ], "il dominio proprio non e' mai un occupante"
+        assert len(dettaglio["probe"]) == 3
+        # I piu' recenti per primi, con domanda e risposta.
+        assert dettaglio["probe"][0]["answer_text"] == "risposta numero 2"
+        assert "lacuna" in dettaglio["probe"][0]["query_text"]
+
+    async def test_dettaglio_lacuna_inesistente_da_404(self, autenticato):
+        assert (await autenticato.get("/api/gaps/999999?days=7")).status_code == 404
+
+    async def test_kpi_conta_le_lacune_per_il_badge(self, autenticato, client, session):
+        """Il badge di navigazione non deve scaricare la lista intera per
+        contare, e il conteggio non deve saturare al limit di /gaps."""
+
+        async def lacuna(slug: str, *, recuperati: int) -> None:
+            t = Topic(
+                source_id=abs(hash(slug)) % 100000,
+                slug=slug,
+                title=slug,
+                category_slug="scuola",
+                tags=[],
+                faq_questions=[],
+                probe_count=0,
+                published_at=ADESSO - timedelta(days=2),
+            )
+            session.add(t)
+            await session.flush()
+            q = Query(
+                text=f"domanda su {slug} lunga abbastanza da essere valida?",
+                text_hash=f"hash-{slug}",
+                strategy="keyword_intent",
+                generator="template",
+                category_slug="scuola",
+                topic_id=t.id,
+            )
+            session.add(q)
+            await session.flush()
+            for n in range(SOGLIA_MINIMA):
+                r = Run(status="ok", kind="hourly")
+                session.add(r)
+                await session.flush()
+                session.add(
+                    Probe(
+                        run_id=r.id,
+                        query_id=q.id,
+                        provider="openai",
+                        model="gpt-5.6-luna",
+                        mode="retrieval",
+                        status="ok",
+                        created_at=ADESSO - timedelta(hours=1),
+                        cost_eur=Decimal("0.01"),
+                        latency_ms=1000,
+                        edunews_cited=False,
+                        edunews_retrieved=n < recuperati,
+                    )
+                )
+
+        await lacuna("badge-riscrivibile", recuperati=3)
+        await lacuna("badge-mancante", recuperati=0)
+        await session.commit()
+
+        await client.post("/api/auth/login", json={"password": PASSWORD_TEST})
+        kpi = (await client.get("/api/kpi?days=7")).json()
+
+        assert kpi["lacune_totali"] == 2
+        assert kpi["lacune_riscrivibili"] == 1
+
     async def test_wins_elenca_gli_articoli_citati(self, autenticato, catalogo):
         vittorie = (await autenticato.get("/api/wins?days=7")).json()
         assert len(vittorie) == 1
