@@ -1,7 +1,7 @@
-/** Sezione 1 — Header KPI. Sezione 2 — Tendenza. */
+/** Vista «Panoramica»: il KPI hero, le tessere secondarie e la tendenza. */
 
 import { useQuery } from "@tanstack/react-query";
-import { Minus, TrendingDown, TrendingUp } from "lucide-react";
+import { Minus, TrendDown, TrendUp } from "@phosphor-icons/react";
 import {
   Area,
   CartesianGrid,
@@ -15,192 +15,197 @@ import {
 } from "recharts";
 import { useMemo, useState } from "react";
 
-import { BandaIncertezza, descriviTasso } from "../components/BandaIncertezza";
-import { Card, Scheletro, StatoErrore, StatoVuoto } from "../components/base";
-import {
-  BottoneSpiegazione,
-  PannelloGlossario,
-  useSpiegazione,
-} from "../components/Spiegazione";
+import { Scheletro, StatoErrore, StatoVuoto } from "../components/base";
 import { api, type Delta, type PuntoTendenza, type Tasso } from "../lib/api";
-import type { ChiaveGlossario } from "../lib/glossario";
 import { dataBreve, euro, intero, percentuale, serieDi } from "../lib/format";
-
-/**
- * Le voci spiegate dall'header KPI: i quattro tassi che mostra, più le tre
- * convenzioni di lettura che li governano tutti (la banda, la soglia sotto cui
- * si vede un trattino, quando una variazione conta) e i probe senza ricerca,
- * che compaiono nel conteggio in basso a destra.
- */
-const VOCI_KPI: readonly ChiaveGlossario[] = [
-  "citation_rate",
-  "mention",
-  "target_hit",
-  "recuperato",
-  "banda",
-  "soglia",
-  "significativita",
-  "nessuna_ricerca",
-];
 
 /* ------------------------------------------------------------------ KPI */
 
-function NumeroSecondario({
-  etichetta,
-  tasso,
-  nota,
-}: {
-  etichetta: string;
-  tasso: Tasso;
-  nota: string;
-}) {
-  return (
-    <div>
-      <h3 className="text-sm font-medium text-grafite">{etichetta}</h3>
-      <div className="mt-1">
-        <BandaIncertezza tasso={tasso} tinta="grafite" etichetta={etichetta} />
-      </div>
-      <p className="mt-1 text-xs text-grafite">{nota}</p>
-    </div>
-  );
+/** «+2,1 pt»: la differenza fra due tassi si dice in punti, non in percento. */
+function punti(differenza: number): string {
+  const valore = Math.abs(differenza * 100).toLocaleString("it-IT", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+  return `${differenza >= 0 ? "+" : "−"}${valore} pt`;
 }
 
 /**
  * Il delta compare SOLO se significativo. Se gli intervalli di confidenza dei
  * due periodi si sovrappongono, la differenza e' rumore: mostrarla con una
- * freccia verde sarebbe la bugia piu' facile di tutta l'interfaccia.
+ * freccia sarebbe la bugia piu' facile di tutta l'interfaccia.
  */
 function Variazione({ delta }: { delta: Delta }) {
   if (delta.differenza === null) {
     return (
-      <p className="text-sm text-grafite">
+      <p className="mt-4 text-sm text-testo-45">
         Nessun confronto: il periodo precedente non ha abbastanza probe.
       </p>
     );
   }
   if (!delta.significativo) {
     return (
-      <p className="flex items-center gap-1.5 text-sm text-grafite">
-        <Minus size={16} strokeWidth={1.5} aria-hidden />
-        Variazione non significativa ({percentuale(delta.precedente.tasso ?? 0)} nel periodo
-        precedente): gli intervalli si sovrappongono.
+      <p className="mt-4 flex items-center gap-2 text-sm text-testo-45">
+        <Minus size={16} aria-hidden />
+        variazione non significativa
+        <span className="cifre whitespace-nowrap">
+          (era {percentuale(delta.precedente.tasso ?? 0)})
+        </span>
       </p>
     );
   }
   const su = delta.differenza > 0;
-  const Icona = su ? TrendingUp : TrendingDown;
+  const Icona = su ? TrendUp : TrendDown;
   return (
-    <p
-      className={`flex items-center gap-1.5 text-sm font-medium ${su ? "text-alloro" : "text-sigillo"}`}
-    >
-      <Icona size={16} strokeWidth={1.5} aria-hidden />
-      {su ? "+" : ""}
-      {percentuale(delta.differenza)} rispetto al periodo precedente
-      <span className="font-normal text-grafite">
-        (era {percentuale(delta.precedente.tasso ?? 0)})
+    <p className="mt-4 flex items-center gap-2 text-sm text-accento-300">
+      <Icona size={16} aria-hidden />
+      <span className="cifre whitespace-nowrap font-medium">{punti(delta.differenza)}</span>
+      <span className="whitespace-nowrap text-testo-45">
+        vs periodo precedente ({percentuale(delta.precedente.tasso ?? 0)})
       </span>
     </p>
   );
 }
 
+function Tessera({
+  etichetta,
+  valore,
+  conto,
+  nota,
+}: {
+  etichetta: string;
+  valore: string;
+  conto?: string;
+  nota: string;
+}) {
+  return (
+    <div className="rounded-md bg-superficie p-5">
+      <p className="text-[11px] uppercase tracking-[0.1em] text-testo-55">{etichetta}</p>
+      <p className="mt-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="display cifre text-[26px] leading-none">{valore}</span>
+        {conto && <span className="cifre text-xs text-testo-45">{conto}</span>}
+      </p>
+      <p className="mt-2.5 text-xs leading-normal text-testo-55">{nota}</p>
+    </div>
+  );
+}
+
+function contoTasso(t: Tasso): string {
+  return t.denominatore === 0
+    ? "nessun dato"
+    : `${intero(t.numeratore)}/${intero(t.denominatore)}`;
+}
+
 export function HeaderKpi({ giorni }: { giorni: number }) {
-  const spiega = useSpiegazione();
   const { data, isPending, error, refetch } = useQuery({
     queryKey: ["kpi", giorni],
     queryFn: () => api.kpi(giorni),
   });
 
-  if (error) return <StatoErrore errore={error} riprova={() => void refetch()} />;
-  if (isPending)
+  const intestazione = (
+    <div>
+      <p className="text-[11px] uppercase tracking-[0.1em] text-accento">
+        Ultimi {giorni} giorni
+      </p>
+      <h1 className="display mt-1.5 text-xl">Panoramica</h1>
+      <p className="mt-1.5 max-w-[60ch] text-sm text-testo-55">
+        Dove i motori di risposta citano edunews24.it, e dove no.
+      </p>
+    </div>
+  );
+
+  if (error) {
     return (
-      <div className="rounded-[var(--radius-card)] border border-grafite-tenue bg-foglio p-4 shadow-card">
-        <Scheletro righe={4} />
+      <div>
+        {intestazione}
+        <div className="mt-7">
+          <StatoErrore errore={error} riprova={() => void refetch()} />
+        </div>
       </div>
     );
-
-  const k = data!;
-  if (k.probe_totali === 0) {
+  }
+  if (isPending) {
     return (
-      <div className="rounded-[var(--radius-card)] border border-grafite-tenue bg-foglio p-4 shadow-card">
-        <StatoVuoto
-          titolo={`Nessun probe riuscito negli ultimi ${giorni} giorni.`}
-          cosaFare="Il ciclo orario gira al minuto 7 di ogni ora. Per un ciclo immediato usa «Esegui un ciclo» nello stato del sistema, oppure `python sender.py run-once` dal container."
-        />
+      <div>
+        {intestazione}
+        <div className="mt-7 rounded-md bg-superficie p-7">
+          <Scheletro righe={4} />
+        </div>
       </div>
     );
   }
 
+  const k = data;
+  if (k.probe_totali === 0) {
+    return (
+      <div>
+        {intestazione}
+        <div className="mt-7">
+          <StatoVuoto
+            titolo={`Nessun probe riuscito negli ultimi ${giorni} giorni.`}
+            cosaFare="Il ciclo orario gira al minuto 7 di ogni ora. Per un ciclo immediato usa «Esegui un ciclo» nello stato del sistema, oppure `python sender.py run-once` dal container."
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const cr = k.citation_rate;
   return (
-    <div
-      className="rounded-[var(--radius-card)] border border-grafite-tenue bg-foglio p-4 shadow-card"
-      onKeyDown={spiega.chiudiConEsc}
-    >
-      {/* Titolo e spiegazione in cima: il pannello si apre SOPRA i numeri, mai
-          davanti, così non copre proprio quello che sta spiegando. */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="display text-lg font-semibold">Citation rate</h2>
-          <p className="mt-0.5 max-w-prose text-sm text-grafite">
-            Quota di risposte con web search attiva in cui edunews24.it compare fra le fonti
-            citate, negli ultimi {giorni} giorni.
+    <div>
+      {intestazione}
+      <div className="mt-9 grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] items-stretch gap-6">
+        {/* Il numero che conta, con il peso visivo maggiore. */}
+        <div className="rounded-md bg-superficie p-7">
+          <p className="text-[11px] uppercase tracking-[0.1em] text-testo-55">Citation rate</p>
+          <p className="mt-3.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="display cifre text-[clamp(3rem,8vw,4.5rem)] leading-none tracking-[-0.03em]">
+              {cr.tasso === null ? "—" : percentuale(cr.tasso)}
+            </span>
+            <span className="cifre text-sm text-testo-55">{contoTasso(cr)}</span>
+          </p>
+          {/* La sottolineatura: l'accento come marchio corto, col suo bagliore. */}
+          <div
+            aria-hidden
+            className="mt-4 h-[3px] w-14 rounded-[2px] bg-accento shadow-bagliore-riga"
+          />
+          <Variazione delta={k.citation_rate_delta} />
+          <p className="cifre mt-2.5 text-xs text-testo-45">
+            {cr.ic_basso !== null && cr.ic_alto !== null
+              ? `IC 95%: ${percentuale(cr.ic_basso)} – ${percentuale(cr.ic_alto)} · `
+              : ""}
+            risposte con ricerca web in cui il sito è fra le fonti citate
           </p>
         </div>
-        <BottoneSpiegazione
-          aperto={spiega.aperto}
-          onToggle={spiega.alterna}
-          controlla={spiega.idPannello}
-          etichetta="Cosa vogliono dire questi numeri"
-          riferimento={spiega.bottone}
-        />
-      </div>
 
-      {spiega.aperto && (
-        <PannelloGlossario id={spiega.idPannello} voci={VOCI_KPI} className="mt-3" />
-      )}
-
-      <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        {/* Il numero che conta, con il peso visivo maggiore. */}
-        <div>
-          <div className="max-w-md">
-            <BandaIncertezza
-              tasso={k.citation_rate}
-              taglia="grande"
-              tinta="timbro"
-              etichetta="citation rate"
-            />
-          </div>
-          <div className="mt-3">
-            <Variazione delta={k.citation_rate_delta} />
-          </div>
-        </div>
-
-        <div className="grid gap-4 border-t border-grafite-tenue pt-4 sm:grid-cols-2 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
-          <NumeroSecondario
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-6">
+          <Tessera
             etichetta="Mention senza link"
-            tasso={k.mention_rate}
-            nota="Il modello nomina il giornale ma non lo cita come fonte. Segnale diverso: riconoscimento, non retrieval."
+            valore={k.mention_rate.tasso === null ? "—" : percentuale(k.mention_rate.tasso)}
+            conto={contoTasso(k.mention_rate)}
+            nota="Nominato ma non citato come fonte: notorietà, non retrieval."
           />
-          <NumeroSecondario
+          <Tessera
             etichetta="Articolo giusto"
-            tasso={k.target_hit_rate}
-            nota="Citato proprio il pezzo che ha generato la domanda, non un altro del sito."
+            valore={
+              k.target_hit_rate.tasso === null ? "—" : percentuale(k.target_hit_rate.tasso)
+            }
+            conto={contoTasso(k.target_hit_rate)}
+            nota="Citato proprio il pezzo che ha generato la domanda."
           />
-          <NumeroSecondario
+          <Tessera
             etichetta="Recuperato"
-            tasso={k.retrieval_rate}
-            nota="Comparso fra le fonti mostrate al modello, citato o no. Recuperato-ma-non-citato è un problema di qualità percepita, non di indicizzazione."
+            valore={
+              k.retrieval_rate.tasso === null ? "—" : percentuale(k.retrieval_rate.tasso)
+            }
+            conto={contoTasso(k.retrieval_rate)}
+            nota="Aperto dal motore, citato o no. Se non citato, è forma del pezzo."
           />
-          <div>
-            <h3 className="text-sm font-medium text-grafite">Costo del periodo</h3>
-            <p className="display cifre mt-1 text-xl font-semibold">{euro(k.costo_eur)}</p>
-            <p className="mt-1 text-xs text-grafite">
-              {intero(k.probe_totali)} probe riusciti
-              {k.probe_falliti > 0 && `, ${intero(k.probe_falliti)} falliti`}
-              {k.probe_senza_ricerca > 0 &&
-                `, ${intero(k.probe_senza_ricerca)} senza ricerca (esclusi dai conti)`}
-              .
-            </p>
-          </div>
+          <Tessera
+            etichetta="Costo del periodo"
+            valore={euro(k.costo_eur)}
+            nota={`${intero(k.probe_totali)} probe riusciti · ${intero(k.probe_falliti)} falliti · ${intero(k.probe_senza_ricerca)} senza ricerca (esclusi).`}
+          />
         </div>
       </div>
     </div>
@@ -221,82 +226,109 @@ export function Tendenza({ giorni }: { giorni: number }) {
     queryFn: () => api.tendenza(giorni, soloProvider || undefined),
   });
 
+  // L'elenco dei provider per il filtro NON dipende dal filtro stesso,
+  // altrimenti selezionandone uno sparirebbero gli altri bottoni.
+  const tutti = useQuery({
+    queryKey: ["tendenza", giorni, ""],
+    queryFn: () => api.tendenza(giorni, undefined),
+  });
+  const nomiProvider = useMemo(
+    () => [...new Set((tutti.data ?? []).map((p) => p.provider))].sort(),
+    [tutti.data],
+  );
+
   const { righe, provider } = useMemo(() => aggrega(data ?? []), [data]);
 
   return (
-    <Card
-      id="tendenza"
-      titolo="Tendenza"
-      descrizione="Citation rate giorno per giorno. Le serie si distinguono per tratteggio oltre che per colore, così restano leggibili in scala di grigi."
-      spiega={["citation_rate", "banda", "soglia", "ciclo"]}
-      azioni={
-        <label className="flex items-center gap-2 text-sm">
-          <span className="text-grafite">Provider</span>
-          <select
-            value={soloProvider}
-            onChange={(e) => setSoloProvider(e.target.value)}
-            className="min-h-11 cursor-pointer rounded-[var(--radius-controllo)] border border-grafite-tenue bg-foglio px-2 text-sm sm:min-h-9"
+    <div className="rounded-md bg-superficie p-7" id="tendenza">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="display text-md">Tendenza</h2>
+          <p className="mt-1 text-sm text-testo-55">
+            Citation rate per giorno e per provider. Le serie si distinguono per tratteggio
+            oltre che per colore.
+          </p>
+        </div>
+        {nomiProvider.length > 0 && (
+          <div
+            role="group"
+            aria-label="Filtra per provider"
+            className="inline-flex overflow-hidden rounded-md border border-divisore"
           >
-            <option value="">tutti</option>
-            {provider.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
+            {[["", "tutti"], ...nomiProvider.map((p) => [p, p])].map(([valore, testo]) => (
+              <button
+                key={valore}
+                type="button"
+                onClick={() => setSoloProvider(valore!)}
+                aria-pressed={soloProvider === valore}
+                className={`min-h-11 cursor-pointer whitespace-nowrap border-0 bg-transparent px-3 text-sm transition-colors sm:min-h-8 ${
+                  soloProvider === valore
+                    ? "text-accento shadow-[inset_0_0_0_1px_var(--color-accento)]"
+                    : "text-testo-60 hover:bg-testo/7"
+                }`}
+              >
+                {testo}
+              </button>
             ))}
-          </select>
-        </label>
-      }
-    >
+          </div>
+        )}
+      </div>
+
       {error ? (
-        <StatoErrore errore={error} riprova={() => void refetch()} />
+        <div className="mt-5">
+          <StatoErrore errore={error} riprova={() => void refetch()} />
+        </div>
       ) : isPending ? (
-        <Scheletro righe={6} />
+        <div className="mt-5">
+          <Scheletro righe={6} />
+        </div>
       ) : righe.length < 2 ? (
-        <StatoVuoto
-          titolo="Servono almeno due giorni di dati per disegnare una tendenza."
-          cosaFare="Il grafico si popola da sé man mano che i cicli orari girano. Il giorno corrente è calcolato in tempo reale, i precedenti dagli aggregati notturni."
-        />
+        <div className="mt-5">
+          <StatoVuoto
+            titolo="Servono almeno due giorni di dati per disegnare una tendenza."
+            cosaFare="Il grafico si popola da sé man mano che i cicli orari girano. Il giorno corrente è calcolato in tempo reale, i precedenti dagli aggregati notturni."
+          />
+        </div>
       ) : (
         <>
-          <div className="h-72 w-full">
+          <div className="mt-6 h-72 w-full">
             <ResponsiveContainer>
-              <ComposedChart data={righe} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+              <ComposedChart data={righe} margin={{ top: 8, right: 8, bottom: 0, left: -14 }}>
                 <CartesianGrid stroke="var(--color-divisore)" vertical={false} />
                 <XAxis
                   dataKey="giorno"
                   tickFormatter={dataBreve}
-                  tick={{ fontSize: 12, fill: "var(--color-testo-45)" }}
-                  stroke="var(--color-divisore)"
+                  tick={{ fontSize: 11, fill: "var(--color-testo-45)" }}
+                  stroke="transparent"
                   minTickGap={24}
                 />
                 <YAxis
                   domain={[0, 1]}
                   tickFormatter={(v: number) => `${Math.round(v * 100)}%`}
-                  tick={{ fontSize: 12, fill: "var(--color-testo-45)" }}
-                  stroke="var(--color-divisore)"
-                  width={48}
+                  tick={{ fontSize: 11, fill: "var(--color-testo-45)" }}
+                  stroke="transparent"
+                  width={44}
                 />
                 <Tooltip content={<Suggerimento />} />
                 <Legend
                   verticalAlign="bottom"
-                  height={28}
+                  height={30}
                   wrapperStyle={{ fontSize: 13 }}
-                  formatter={(v) => <span className="text-lavagna">{String(v)}</span>}
+                  formatter={(v) => <span className="text-testo-70">{String(v)}</span>}
                 />
                 {/* La banda d'incertezza attorno alla linea, quando si guarda
                     un solo provider: con piu' serie diventerebbe illeggibile. */}
-                {provider.length === 1 &&
-                  provider[0] && (
-                    <Area
-                      dataKey={`${provider[0]}__ic`}
-                      stroke="none"
-                      fill={serieDi(provider[0]).colore}
-                      fillOpacity={0.14}
-                      isAnimationActive={false}
-                      legendType="none"
-                      name="intervallo di confidenza"
-                    />
-                  )}
+                {provider.length === 1 && provider[0] && (
+                  <Area
+                    dataKey={`${provider[0]}__ic`}
+                    stroke="none"
+                    fill={serieDi(provider[0]).colore}
+                    fillOpacity={0.12}
+                    isAnimationActive={false}
+                    legendType="none"
+                    name="intervallo di confidenza"
+                  />
+                )}
                 {provider.map((p) => (
                   <Line
                     key={p}
@@ -321,15 +353,14 @@ export function Tendenza({ giorni }: { giorni: number }) {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          {provider.length > 1 && (
-            <p className="mt-2 text-xs text-grafite">
-              L'intervallo di confidenza si disegna selezionando un solo provider: con più
-              serie sovrapposte diventerebbe illeggibile.
-            </p>
-          )}
+          <p className="mt-3 text-xs text-testo-40">
+            {provider.length === 1
+              ? "banda = intervallo di confidenza 95%"
+              : "L'intervallo di confidenza si disegna selezionando un solo provider: con più serie sovrapposte diventerebbe illeggibile."}
+          </p>
         </>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -370,9 +401,9 @@ function Suggerimento({
   if (!active || !payload?.length) return null;
   const riga = payload[0]?.payload;
   return (
-    <div className="rounded-[var(--radius-controllo)] border border-grafite-tenue bg-foglio p-2.5 text-sm shadow-alzata">
+    <div className="rounded-md bg-superficie p-3 text-sm shadow-md">
       <p className="font-medium">{label ? dataBreve(label) : ""}</p>
-      <ul className="mt-1 space-y-0.5">
+      <ul className="mt-1.5 space-y-1">
         {payload
           .filter((v) => typeof v.dataKey === "string" && !v.dataKey.includes("__"))
           .map((v) => {
@@ -381,16 +412,22 @@ function Suggerimento({
             const k = Number(riga?.[`${p}__k`] ?? 0);
             return (
               <li key={p} className="cifre flex items-center gap-2">
-                <span
-                  aria-hidden
-                  className="inline-block h-0.5 w-4"
-                  style={{ background: serieDi(p).colore }}
-                />
-                <span className="text-grafite">{p}</span>
+                <svg width="18" height="4" viewBox="0 0 18 4" aria-hidden>
+                  <line
+                    x1="0"
+                    y1="2"
+                    x2="18"
+                    y2="2"
+                    stroke={serieDi(p).colore}
+                    strokeWidth="2"
+                    strokeDasharray={serieDi(p).tratto}
+                  />
+                </svg>
+                <span className="text-testo-55">{p}</span>
                 <span className="font-medium">
                   {typeof v.value === "number" ? percentuale(v.value) : "—"}
                 </span>
-                <span className="text-xs text-grafite">
+                <span className="text-xs text-testo-45">
                   {k}/{n}
                 </span>
               </li>
@@ -400,5 +437,3 @@ function Suggerimento({
     </div>
   );
 }
-
-export { descriviTasso };
