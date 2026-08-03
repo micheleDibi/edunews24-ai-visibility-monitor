@@ -89,6 +89,9 @@
   --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
 
+  /* Il punto in cui la sidebar diventa barra superiore. */
+  --breakpoint-lato: 56.25rem;
+
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
   --text-base: 0.9375rem; /* 15px, il corpo Nocturne */
