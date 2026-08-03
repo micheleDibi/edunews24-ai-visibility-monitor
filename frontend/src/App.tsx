@@ -20,7 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Bottone, SelettorePeriodo } from "./components/base";
 import { NonAutenticato, api } from "./lib/api";
-import { Categorie, Domini, Provider } from "./sezioni/confronti";
+import { Confronti, Domini } from "./sezioni/confronti";
 import { CosaFunziona, DoveInvisibile } from "./sezioni/operativo";
 import { EsploraProbe } from "./sezioni/esplora";
 import { Legenda } from "./sezioni/legenda";
@@ -136,12 +136,7 @@ export default function App() {
               </div>
             )}
             {vista === "/invisibile" && <DoveInvisibile giorni={giorni} />}
-            {vista === "/confronti" && (
-              <div className="space-y-6">
-                <Provider giorni={giorni} />
-                <Categorie giorni={giorni} />
-              </div>
-            )}
+            {vista === "/confronti" && <Confronti giorni={giorni} />}
             {vista === "/esplora" && <EsploraProbe giorni={giorni} />}
             {vista === "/sistema" && <StatoSistema />}
             {vista === "/guida" && <Legenda />}
