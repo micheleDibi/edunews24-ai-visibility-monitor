@@ -156,7 +156,7 @@ export function Distintivo({
   titolo,
 }: {
   children: ReactNode;
-  tinta?: "timbro" | "alloro" | "ottone" | "grafite" | "sigillo";
+  tinta?: "timbro" | "alloro" | "ottone" | "grafite" | "sigillo" | "contorno";
   titolo?: string;
 }) {
   const tinte = {
@@ -165,6 +165,7 @@ export function Distintivo({
     ottone: "bg-pervinca-900 text-pervinca-200",
     grafite: "border border-divisore text-testo-45",
     sigillo: "border border-accento-700 text-accento-300",
+    contorno: "border border-accento text-accento",
   } as const;
   return (
     <span
