@@ -261,19 +261,19 @@ export function Tendenza({ giorni }: { giorni: number }) {
           <div className="h-72 w-full">
             <ResponsiveContainer>
               <ComposedChart data={righe} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
-                <CartesianGrid stroke="var(--color-grafite-tenue)" vertical={false} />
+                <CartesianGrid stroke="var(--color-divisore)" vertical={false} />
                 <XAxis
                   dataKey="giorno"
                   tickFormatter={dataBreve}
-                  tick={{ fontSize: 12, fill: "var(--color-grafite)" }}
-                  stroke="var(--color-grafite-tenue)"
+                  tick={{ fontSize: 12, fill: "var(--color-testo-45)" }}
+                  stroke="var(--color-divisore)"
                   minTickGap={24}
                 />
                 <YAxis
                   domain={[0, 1]}
                   tickFormatter={(v: number) => `${Math.round(v * 100)}%`}
-                  tick={{ fontSize: 12, fill: "var(--color-grafite)" }}
-                  stroke="var(--color-grafite-tenue)"
+                  tick={{ fontSize: 12, fill: "var(--color-testo-45)" }}
+                  stroke="var(--color-divisore)"
                   width={48}
                 />
                 <Tooltip content={<Suggerimento />} />

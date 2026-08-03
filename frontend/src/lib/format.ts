@@ -27,16 +27,18 @@ export const millisecondi = (v: number | null) =>
   v === null ? "—" : v < 1000 ? `${v} ms` : `${(v / 1000).toFixed(1)} s`;
 
 /** Colore e tratteggio per provider: il tratteggio rende le serie leggibili
- *  in scala di grigi e per un daltonico, dove il colore da solo non basta. */
+ *  in scala di grigi e per un daltonico, dove il colore da solo non basta.
+ *  I token --color-serie-N cambiano col tema (sul fondo scuro le serie si
+ *  schiariscono): qui si nominano i ruoli, i valori vivono in index.css. */
 export const SERIE_PROVIDER: Record<string, { colore: string; tratto: string }> = {
-  openai: { colore: "var(--color-timbro)", tratto: "0" },
-  perplexity: { colore: "var(--color-alloro)", tratto: "6 3" },
-  anthropic: { colore: "var(--color-ottone)", tratto: "2 3" },
-  gemini: { colore: "var(--color-ardesia)", tratto: "8 3 2 3" },
+  openai: { colore: "var(--color-serie-1)", tratto: "0" },
+  perplexity: { colore: "var(--color-serie-2)", tratto: "6 4" },
+  anthropic: { colore: "var(--color-serie-3)", tratto: "2 4" },
+  gemini: { colore: "var(--color-serie-4)", tratto: "9 4 2 4" },
 };
 
 export const serieDi = (provider: string) =>
-  SERIE_PROVIDER[provider] ?? { colore: "var(--color-grafite)", tratto: "1 4" };
+  SERIE_PROVIDER[provider] ?? { colore: "var(--color-testo-55)", tratto: "1 4" };
 
 /** Etichette leggibili per gli stati dei probe e dei run. */
 export const ETICHETTA_STATO: Record<string, string> = {
